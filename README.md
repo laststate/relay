@@ -1,0 +1,135 @@
+# Last State Relay
+
+Offline-first gateway between devices running **Latch** and one or more **Trace**
+backends. Relay accepts LEP envelopes (serial, TCP, HTTP, MQTT, adapters, or
+files), validates them, stores them on disk, ACKs the device only after the
+write, optionally analyzes crashes locally, and forwards events with retries and
+idempotency.
+
+```mermaid
+flowchart LR
+  Device[Latch / Probe] -->|LEP| Relay[laststate-relay]
+  Relay -->|persist + ACK| Disk[(local spool)]
+  Relay -->|HTTP batch| Trace[Trace]
+```
+
+## Guarantees
+
+- **Persist before ACK** — `LSAK ACK_STORED` only after object write + SQLite commit
+- **At-least-once delivery** — duplicates possible after a lost response; stable IDs make retries safe
+- **Works offline** — outages do not block collection
+- **Raw kept locally** — original LEP bytes stay exportable and checksummed
+- **No cloud lock-in** — talks only to the Trace HTTP contract
+
+## Features
+
+- LEP v1 validation/encode, CRC-32/IEEE, optional HMAC + ChaCha20-Poly1305, zstd payloads
+- Latch stream and COBS framing with resync
+- Sources: serial, TCP/TLS, UDP, HTTP/TLS, directory, MQTT, subprocess adapters
+- Delivery: mirror / priority / route / local-only, JSON or binary batch, zstd
+- Privacy filters per destination (local raw untouched)
+- ELF catalog, build-id match, DWARF + external symbolizers, Cortex-M and multi-arch basics
+- CLI/TUI, Prometheus, Grafana dashboard template, backup/restore
+- Packaging: Docker, systemd, deb/rpm templates, Windows service, launchd, Homebrew
+
+## Build
+
+```bash
+go test ./...
+go build -trimpath -ldflags "-s -w \
+  -X main.cliVersion=v0.3.0-alpha \
+  -X main.gitCommit=$(git rev-parse --short HEAD) \
+  -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -o bin/laststate-relay ./cmd/laststate-relay
+```
+
+Needs Go 1.26.1+.
+
+## Quick start
+
+```bash
+cp relay.yaml.example relay.yaml
+laststate-relay config validate relay.yaml
+laststate-relay run --config relay.yaml
+```
+
+Serial collect:
+
+```bash
+laststate-relay collect \
+  --serial COM5 \
+  --baud 115200 \
+  --framing latch-stream \
+  --ack lsak-v1 \
+  --data-dir ./data
+```
+
+Offline analysis (explicit ELF or auto-match from the artifact catalog):
+
+```bash
+laststate-relay analyze crash.lep --elf build/firmware.elf
+laststate-relay analyze crash.lep --data-dir ./data
+```
+
+## APIs
+
+Admin and ingest are separate. Do not expose admin publicly without TLS and a
+strong token.
+
+**Admin**
+
+```text
+GET  /v1/status | /v1/health | /v1/ready
+GET  /v1/events | /v1/events/{id}
+GET  /v1/destinations
+POST /v1/events/{id}/replay
+POST /v1/destinations/{id}/pause|resume
+POST /v1/spool/prune|reconcile
+```
+
+**Ingest**
+
+```text
+GET  /v1/ingest/capabilities
+GET  /v1/relay/capabilities
+POST /v1/ingest
+POST /v1/events:batch
+```
+
+**Trace (as destination)**
+
+```text
+GET  /v1/relay/capabilities
+POST /v1/ingest
+POST /v1/events:batch
+```
+
+Batching is per destination. Relay discovers limits, sends JSON or binary batches
+(optionally zstd), retries only failed items, and falls back to single-event POST
+for older servers.
+
+## CLI
+
+```text
+run · collect · info · inspect · analyze
+import · export · replay · status · doctor
+artifacts · destinations · bundle · spool
+backup · restore · config · version
+```
+
+## Docs
+
+| Doc | Topic |
+|-----|--------|
+| [docs/architecture.md](docs/architecture.md) | How the pieces fit |
+| [docs/durability.md](docs/durability.md) | ACK / write path |
+| [docs/production.md](docs/production.md) | Deploy checklist |
+| [docs/compatibility-matrix.md](docs/compatibility-matrix.md) | What is ready vs draft |
+| [spec/](spec/) | Wire drafts (crypto, batch, TLVs, …) |
+| [ROADMAP.md](ROADMAP.md) | What is left |
+
+## Status
+
+Solid for lab and pilot gateways. Not tagged `v1.0.0` yet — that waits on
+Latch/Trace E2E, HIL, protocol freeze, and a security review. CAN/BLE/LoRa and
+Probe HIL are still roadmap items (adapter SDK covers custom transports).
