@@ -26,6 +26,7 @@ Relay uses:
 - `GET /v1/relay/capabilities`
 - `POST /v1/ingest` (and optional batch endpoints)
 
-Idempotent success is HTTP **202** (including duplicates with the same payload hash).
+Idempotent success is HTTP **2xx** (including duplicates with the same payload hash).
+Same `event_id` with a **different** payload is **422** `conflict` — not delivered.
 
 See [trace-api.md](../spec/trace-api.md) and [latch-integration.md](latch-integration.md).

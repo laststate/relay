@@ -19,7 +19,17 @@ X-Last-State-Event-ID: evt_<stable-id>
 Authorization: Bearer <token>   # when configured
 ```
 
-`2xx` and `409` are idempotent success. `408`, `425`, `429`, and `5xx` are retryable. `401`, `403`, `413`, and `422` require operator or payload action.
+### Status codes (single event)
+
+| Status | Meaning | Relay action |
+|--------|---------|--------------|
+| `2xx` | Accepted or **true duplicate** (same `event_id` + same payload hash). Body may include `"duplicate": true` / `"status":"duplicate"`. | Mark delivered |
+| `422` + `error.code=conflict` | Same `event_id`, **different** payload hash | Permanent failure (do not ACK as delivered) |
+| `409` | Legacy / ambiguous. Success **only** if body marks duplicate; otherwise treat as conflict (permanent) | Inspect body |
+| `408`, `425`, `429`, `5xx` | Temporary | Retry |
+| `401`, `403`, `413`, `422` (other codes) | Operator or payload | Permanent / fix config |
+
+Duplicates must use **2xx**, not 409. Conflicts must use **422** with `error.code: "conflict"`.
 
 
 ## Batch ingestion

@@ -15,6 +15,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout protocol vectors
+        uses: actions/checkout@v4
+        with:
+          repository: laststate/protocol
+          path: protocol-ref
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.x'
@@ -24,7 +29,16 @@ jobs:
         shell: bash
         run: test -z "$(gofmt -l cmd internal)"
       - run: go vet ./...
-      - run: go test -race ./...
+      - name: Protocol LEP goldens
+        shell: bash
+        env:
+          PROTOCOL_VECTORS: ${{ github.workspace }}/protocol-ref/test-vectors
+        run: go test ./internal/lep -run TestProtocolVectors -count=1 -v
+      - name: Test
+        shell: bash
+        env:
+          PROTOCOL_VECTORS: ${{ github.workspace }}/protocol-ref/test-vectors
+        run: go test -race ./...
       - run: go build ./cmd/laststate-relay
 
   security:

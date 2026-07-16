@@ -292,7 +292,7 @@ func (worker *Worker) deliver(ctx context.Context, delivery store.PendingDeliver
 	receipt := strings.TrimSpace(string(receiptBytes))
 	_ = started // retained for future latency metrics
 
-	if (response.StatusCode >= 200 && response.StatusCode < 300) || response.StatusCode == http.StatusConflict {
+	if isIngestSuccess(response.StatusCode, receipt) {
 		worker.markSuccess(delivery.DestinationID)
 		if err := worker.Store.RecordDelivery(ctx, delivery, response.StatusCode, receipt, "", time.Time{}, false); err != nil {
 			return err
@@ -305,7 +305,7 @@ func (worker *Worker) deliver(ctx context.Context, delivery store.PendingDeliver
 
 	failure := destinationFailure(response.StatusCode, receipt)
 	retryAt := parseRetryAfter(response.Header.Get("Retry-After"), time.Now())
-	permanent := isPermanent(response.StatusCode)
+	permanent := isPermanent(response.StatusCode) || isIngestConflict(response.StatusCode, receipt)
 	if !permanent {
 		worker.markFailure(delivery.DestinationID)
 	}
@@ -717,10 +717,82 @@ func isPermanent(status int) bool {
 	case http.StatusRequestTimeout, http.StatusTooEarly, http.StatusTooManyRequests:
 		return false
 	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound,
-		http.StatusRequestEntityTooLarge, http.StatusUnprocessableEntity:
+		http.StatusRequestEntityTooLarge, http.StatusUnprocessableEntity, http.StatusConflict:
 		return true
 	}
 	return status >= 400 && status < 500
+}
+
+// isIngestSuccess reports whether Trace accepted the event (including true
+// duplicates). HTTP 409 alone is NOT success: Trace uses 409/422 for
+// same-event_id / different-payload conflicts. Legacy peers that returned 409
+// for duplicates are accepted only when the body marks the event as duplicate.
+func isIngestSuccess(status int, body string) bool {
+	if status >= 200 && status < 300 {
+		return true
+	}
+	if status != http.StatusConflict {
+		return false
+	}
+	return bodyIndicatesDuplicate(body)
+}
+
+// isIngestConflict is a same event_id / different hash rejection (permanent).
+func isIngestConflict(status int, body string) bool {
+	if status == http.StatusUnprocessableEntity || status == http.StatusConflict {
+		if bodyIndicatesDuplicate(body) {
+			return false
+		}
+		// Prefer explicit error code when present.
+		var envelope struct {
+			Error struct {
+				Code string `json:"code"`
+			} `json:"error"`
+			Code   string `json:"code"`
+			Status string `json:"status"`
+		}
+		if err := json.Unmarshal([]byte(body), &envelope); err == nil {
+			code := envelope.Error.Code
+			if code == "" {
+				code = envelope.Code
+			}
+			if code == "conflict" || envelope.Status == "conflict" {
+				return true
+			}
+		}
+		// 422 without a parseable body is permanent via isPermanent; 409 without
+		// duplicate markers is treated as conflict (not silent success).
+		return status == http.StatusConflict || strings.Contains(strings.ToLower(body), "conflict")
+	}
+	return false
+}
+
+func bodyIndicatesDuplicate(body string) bool {
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return false
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		// Non-JSON legacy body: only accept explicit duplicate wording.
+		lower := strings.ToLower(body)
+		return strings.Contains(lower, `"duplicate":true`) || strings.Contains(lower, "status\":\"duplicate")
+	}
+	if v, ok := payload["duplicate"].(bool); ok && v {
+		return true
+	}
+	if s, ok := payload["status"].(string); ok && strings.EqualFold(s, "duplicate") {
+		return true
+	}
+	if code, ok := payload["code"].(string); ok && strings.EqualFold(code, "duplicate") {
+		return true
+	}
+	if errObj, ok := payload["error"].(map[string]any); ok {
+		if code, ok := errObj["code"].(string); ok && strings.EqualFold(code, "duplicate") {
+			return true
+		}
+	}
+	return false
 }
 
 func parseRetryAfter(value string, now time.Time) time.Time {

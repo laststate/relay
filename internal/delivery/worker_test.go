@@ -139,3 +139,115 @@ func batchTestEnvelope(sequence uint32) []byte {
 	binary.LittleEndian.PutUint32(raw[24+len(payload):], crc32.ChecksumIEEE(payload))
 	return raw
 }
+
+func TestConflictNotRecordedAsDelivered(t *testing.T) {
+	// Same event_id, different payload → Trace returns 422 conflict.
+	// Relay must not mark delivery success.
+	var posts int
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/v1/relay/capabilities":
+			http.NotFound(writer, request)
+		case "/v1/ingest":
+			posts++
+			writer.Header().Set("Content-Type", "application/json")
+			writer.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = writer.Write([]byte(`{"error":{"code":"conflict","message":"payload hash mismatch","retryable":false}}`))
+		default:
+			t.Errorf("path = %s", request.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	relay, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer relay.Close()
+	if err := relay.ConfigureDestinations(context.Background(), []store.Destination{{ID: "trace", URL: server.URL}}, "mirror"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := hex.DecodeString("4c5354500102000007000000090000000600000074ddc48901000200aabbea84ccd8")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (ingest.Service{Store: relay}).Accept(context.Background(), "test", raw); err != nil {
+		t.Fatal(err)
+	}
+	worker := &Worker{Store: relay, Client: server.Client(), Concurrency: 1, MinDelay: time.Millisecond, MaxAttempts: 3}
+	if err := worker.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	status, err := relay.Status(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if posts == 0 {
+		t.Fatal("expected ingest POST")
+	}
+	if status.Delivered != 0 {
+		t.Fatalf("conflict must not count as delivered: %+v", status)
+	}
+	if status.DeadLetter == 0 && status.Pending == 0 {
+		t.Fatalf("expected dead_letter or pending after conflict, got %+v", status)
+	}
+}
+
+func TestLegacy409DuplicateStillSucceeds(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/v1/relay/capabilities":
+			http.NotFound(writer, request)
+		case "/v1/ingest":
+			writer.Header().Set("Content-Type", "application/json")
+			writer.WriteHeader(http.StatusConflict)
+			_, _ = writer.Write([]byte(`{"status":"duplicate","duplicate":true}`))
+		default:
+			t.Errorf("path = %s", request.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	relay, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer relay.Close()
+	if err := relay.ConfigureDestinations(context.Background(), []store.Destination{{ID: "trace", URL: server.URL}}, "mirror"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := hex.DecodeString("4c5354500102000007000000090000000600000074ddc48901000200aabbea84ccd8")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (ingest.Service{Store: relay}).Accept(context.Background(), "test", raw); err != nil {
+		t.Fatal(err)
+	}
+	worker := &Worker{Store: relay, Client: server.Client(), Concurrency: 1, MinDelay: time.Millisecond}
+	if err := worker.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	status, err := relay.Status(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Delivered != 1 {
+		t.Fatalf("legacy 409+duplicate body should deliver: %+v", status)
+	}
+}
+
+func TestLegacy409BareConflictNotSuccess(t *testing.T) {
+	// Bare 409 without duplicate markers must not be treated as success.
+	if isIngestSuccess(http.StatusConflict, `{"error":{"code":"conflict"}}`) {
+		t.Fatal("409 conflict body must not be success")
+	}
+	if isIngestSuccess(http.StatusConflict, ``) {
+		t.Fatal("bare 409 must not be success")
+	}
+	if !isIngestSuccess(http.StatusAccepted, `{"status":"duplicate","duplicate":true}`) {
+		t.Fatal("202 duplicate must be success")
+	}
+	if !isIngestConflict(http.StatusUnprocessableEntity, `{"error":{"code":"conflict"}}`) {
+		t.Fatal("422 conflict expected")
+	}
+}
