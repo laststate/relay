@@ -17,13 +17,15 @@ import (
 
 // MQTTConfig describes a durable MQTT subscription that yields raw LEP payloads.
 type MQTTConfig struct {
-	Broker    string
-	ClientID  string
-	Topics    []string
-	QoS       byte
-	Username  string
-	Password  string
-	TLSConfig *tls.Config
+	Broker           string
+	ClientID         string
+	Topics           []string
+	QoS              byte
+	Username         string
+	Password         string
+	TLSConfig        *tls.Config
+	ConnectTimeout   time.Duration // default 30s
+	SubscribeTimeout time.Duration // default 15s
 }
 
 // MQTTHandler is invoked for each message payload.
@@ -70,9 +72,18 @@ func RunMQTT(ctx context.Context, cfg MQTTConfig, handle MQTTHandler) error {
 		_ = handle(msg.Topic(), msg.Payload())
 	})
 
+	connectTimeout := cfg.ConnectTimeout
+	if connectTimeout <= 0 {
+		connectTimeout = 30 * time.Second
+	}
+	subscribeTimeout := cfg.SubscribeTimeout
+	if subscribeTimeout <= 0 {
+		subscribeTimeout = 15 * time.Second
+	}
+
 	client := mqtt.NewClient(opts)
 	token := client.Connect()
-	if !token.WaitTimeout(30 * time.Second) {
+	if !token.WaitTimeout(connectTimeout) {
 		return fmt.Errorf("mqtt connect timeout for %s", sanitizeBroker(cfg.Broker))
 	}
 	if err := token.Error(); err != nil {
@@ -84,7 +95,7 @@ func RunMQTT(ctx context.Context, cfg MQTTConfig, handle MQTTHandler) error {
 		token := client.Subscribe(topic, cfg.QoS, func(_ mqtt.Client, msg mqtt.Message) {
 			_ = handle(msg.Topic(), msg.Payload())
 		})
-		if !token.WaitTimeout(15 * time.Second) {
+		if !token.WaitTimeout(subscribeTimeout) {
 			return fmt.Errorf("mqtt subscribe timeout for %s", topic)
 		}
 		if err := token.Error(); err != nil {

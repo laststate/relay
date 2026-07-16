@@ -40,6 +40,8 @@ jobs:
           PROTOCOL_VECTORS: ${{ github.workspace }}/protocol-ref/test-vectors
         run: go test -race ./...
       - run: go build ./cmd/laststate-relay
+      # Live Trace e2e runs in the Trace repo CI (starts Trace + checks out Relay).
+      # Locally: TRACE_E2E_URL=… TRACE_E2E_TOKEN=… go test -tags=e2e ./internal/delivery -run TestLiveTrace
 
   security:
     runs-on: ubuntu-latest
