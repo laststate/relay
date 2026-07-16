@@ -14,12 +14,11 @@ import (
 	"github.com/laststate/relay/internal/lep"
 )
 
-// TestProtocolVectors runs laststate/protocol test-vectors against this codec.
-// Set PROTOCOL_VECTORS to the protocol/test-vectors directory.
+// TestProtocolVectors runs laststate/protocol goldens (vendored under testdata/).
 func TestProtocolVectors(t *testing.T) {
 	root := protocolVectorsRoot()
 	if root == "" {
-		t.Skip("protocol test-vectors not found; set PROTOCOL_VECTORS")
+		t.Fatal("protocol test-vectors not found (expected testdata/protocol-vectors)")
 	}
 	raw, err := os.ReadFile(filepath.Join(root, "manifest.json"))
 	if err != nil {
@@ -73,9 +72,8 @@ func protocolVectorsRoot() string {
 		}
 	}
 	candidates := []string{
+		filepath.Join("testdata", "protocol-vectors"),
 		filepath.Join("..", "..", "..", "protocol", "test-vectors"),
-		filepath.Join("protocol-ref", "test-vectors"),
-		filepath.Join("..", "protocol-ref", "test-vectors"),
 	}
 	for _, c := range candidates {
 		if st, err := os.Stat(filepath.Join(c, "manifest.json")); err == nil && !st.IsDir() {

@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [dev, prod]
+    branches: [main, master, dev, prod]
   pull_request:
 
 permissions:
@@ -15,11 +15,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: Checkout protocol vectors
-        uses: actions/checkout@v4
-        with:
-          repository: laststate/protocol
-          path: protocol-ref
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.x'
@@ -29,19 +24,15 @@ jobs:
         shell: bash
         run: test -z "$(gofmt -l cmd internal)"
       - run: go vet ./...
-      - name: Protocol LEP goldens
+      - name: Protocol LEP goldens (vendored)
         shell: bash
-        env:
-          PROTOCOL_VECTORS: ${{ github.workspace }}/protocol-ref/test-vectors
         run: go test ./internal/lep -run TestProtocolVectors -count=1 -v
       - name: Test
         shell: bash
-        env:
-          PROTOCOL_VECTORS: ${{ github.workspace }}/protocol-ref/test-vectors
         run: go test -race ./...
       - run: go build ./cmd/laststate-relay
-      # Live Trace e2e runs in the Trace repo CI (starts Trace + checks out Relay).
-      # Locally: TRACE_E2E_URL=… TRACE_E2E_TOKEN=… go test -tags=e2e ./internal/delivery -run TestLiveTrace
+      # Live Trace e2e (//go:build e2e) needs a running Trace:
+      # TRACE_E2E_URL=… TRACE_E2E_TOKEN=… go test -tags=e2e ./internal/delivery -run TestLiveTrace
 
   security:
     runs-on: ubuntu-latest
