@@ -337,7 +337,12 @@ func loadCryptoKeyring(cfg config.Config) (lep.Keyring, error) {
 		if err != nil {
 			return nil, fmt.Errorf("key %q: %w", item.ID, err)
 		}
-		entries = append(entries, lep.Key{ID: lep.KeyIDFromString(item.ID), Key: material})
+		numeric := lep.ParseNumericKeyID(item.ID)
+		entries = append(entries, lep.Key{
+			NumericID: numeric,
+			ID:        lep.KeyIDFromNumeric(numeric),
+			Key:       material,
+		})
 	}
 	return lep.BuildMemoryKeyring(entries, cfg.Crypto.ActiveKeyID, cfg.Crypto.AuthKeyID)
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Last State contributors
 
-// Package lep implements LEP v1 validation, encoding, and optional crypto.
+// Package lep implements LEP v1 validation, encoding, and crypto.
 package lep
 
 import (
@@ -17,15 +17,15 @@ const (
 	Magic           = "LSTP"
 	Version1        = 1
 
+	// Flags match Latch / protocol registry (v1 frozen).
 	FlagAuthenticated uint8 = 1 << 0
 	FlagEncrypted     uint8 = 1 << 1
 	FlagAEAD          uint8 = 1 << 2
-	FlagCompressed    uint8 = 1 << 3
-	KnownFlags              = FlagAuthenticated | FlagEncrypted | FlagAEAD | FlagCompressed
+	FlagTruncated     uint8 = 1 << 3 // Latch: optional fields omitted
+	FlagCompressed    uint8 = 1 << 4 // Gateway zstd of payload; devices do not set this
+	KnownFlags              = FlagAuthenticated | FlagEncrypted | FlagAEAD | FlagTruncated | FlagCompressed
 
 	// CRC32IEEEPolynomial is the normal representation of CRC-32/ISO-HDLC.
-	// Go's hash/crc32.ChecksumIEEE uses its reflected representation 0xEDB88320,
-	// initial value 0xffffffff and final xor 0xffffffff.
 	CRC32IEEEPolynomial          uint32 = 0x04C11DB7
 	CRC32IEEEReflectedPolynomial uint32 = 0xEDB88320
 )
@@ -115,6 +115,7 @@ func Validate(data []byte) (Envelope, error) {
 	if binary.LittleEndian.Uint32(data[crcOffset:crcOffset+4]) != crc32.ChecksumIEEE(data[HeaderSize:crcOffset]) {
 		return envelope, &ValidationError{Kind: ErrorCorrupt, Field: "payload_crc", Reason: "CRC-32/IEEE mismatch"}
 	}
+	// Plaintext TLVs only when not encrypted and not compressed.
 	if envelope.Flags&FlagEncrypted == 0 && envelope.Flags&FlagCompressed == 0 {
 		if err := validateTLVs(data[HeaderSize:crcOffset]); err != nil {
 			return envelope, err
@@ -143,7 +144,6 @@ func validateTLVs(payload []byte) error {
 }
 
 // TLVs returns the unencrypted, uncompressed payload fields after validation.
-// Use DecodeTLVs when the envelope may be authenticated, encrypted, or compressed.
 func TLVs(data []byte) ([]TLV, error) {
 	envelope, err := Validate(data)
 	if err != nil {
@@ -166,7 +166,7 @@ func parseTLVs(payload []byte) ([]TLV, error) {
 	fields := make([]TLV, 0)
 	for offset := 0; offset < len(payload); {
 		if len(payload)-offset < 4 {
-			return nil, &ValidationError{Kind: ErrorCorrupt, Field: "payload", Reason: "incomplete TLV header"}
+			return nil, &ValidationError{Kind: ErrorCorrupt, Field: "payload", Reason: "incomplete TLV"}
 		}
 		fieldType := binary.LittleEndian.Uint16(payload[offset : offset+2])
 		length := int(binary.LittleEndian.Uint16(payload[offset+2 : offset+4]))

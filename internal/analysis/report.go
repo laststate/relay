@@ -170,14 +170,15 @@ func decodeCPU(value []byte, arch uint8) (*CPU, string) {
 			cpu.SP = binary.LittleEndian.Uint32(value[16:20])
 			return cpu, ""
 		}
-	case ArchARMA, ArchXtensa, ArchAVR:
+	case ArchAVR, ArchPIC:
+		// Short experimental layouts (not Latch multi-arch container).
 		if len(value) >= 12 {
 			cpu.PC = binary.LittleEndian.Uint32(value[4:8])
 			cpu.LR = binary.LittleEndian.Uint32(value[8:12])
 			return cpu, ""
 		}
 	}
-	// Default Cortex-M layout (existing contract).
+	// Default Latch multi-arch CPU TLV (Cortex-M / RISC-V / Xtensa / Linux).
 	if len(value) >= 138 {
 		cpu.LR = binary.LittleEndian.Uint32(value[130:134])
 		cpu.PC = binary.LittleEndian.Uint32(value[134:138])

@@ -3,17 +3,20 @@
 
 package analysis
 
-// Architecture codes — see spec/architecture-codes.md.
+// Architecture codes — frozen with LEP v1 / Latch producer table.
+// See protocol registry/architecture-codes.md.
 const (
 	ArchUnknown uint8 = 0
 	ArchCortexM uint8 = 1
 	ArchRISCV   uint8 = 2
-	ArchARMA    uint8 = 3
-	ArchXtensa  uint8 = 4
-	ArchAVR     uint8 = 5
-	ArchPIC     uint8 = 6
-	ArchNXP     uint8 = 7
-	ArchRenesas uint8 = 8
+	ArchXtensa  uint8 = 3
+	ArchLinux   uint8 = 4
+	// Extended (not emitted by Latch v1 core; reserved for future)
+	ArchARMA    uint8 = 5
+	ArchAVR     uint8 = 6
+	ArchPIC     uint8 = 7
+	ArchNXP     uint8 = 8
+	ArchRenesas uint8 = 9
 )
 
 func ArchitectureName(code uint8) string {
@@ -22,10 +25,12 @@ func ArchitectureName(code uint8) string {
 		return "cortex-m"
 	case ArchRISCV:
 		return "riscv"
-	case ArchARMA:
-		return "arm-a"
 	case ArchXtensa:
 		return "xtensa"
+	case ArchLinux:
+		return "linux"
+	case ArchARMA:
+		return "arm-a"
 	case ArchAVR:
 		return "avr"
 	case ArchPIC:

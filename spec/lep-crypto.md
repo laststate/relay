@@ -1,85 +1,60 @@
-# LEP crypto (draft)
+# LEP crypto (v1 — Latch device path)
 
-Draft layout used by Relay until the shared protocol freezes. Tests:
-`internal/lep/crypto_test.go`.
+**Status:** Frozen with protocol LEP v1. Aligned with Latch `ls_envelope_encode` / decrypt.
 
-## Goals
-
-- Authenticate envelopes (integrity / device origin)
-- Optionally encrypt payloads with AEAD
-- Carry a key ID so keys can rotate without re-flashing peers
-- Keep storage and ACK on the bytes as received (ciphertext stays opaque)
+Tests: `internal/lep/crypto_test.go`.
 
 ## Flags
 
 | Flag | Bit | Meaning |
 |------|-----|---------|
 | Authenticated | 0 | Auth trailer present |
-| Encrypted | 1 | Payload is ciphertext (with AEAD) |
+| Encrypted | 1 | Payload is ciphertext |
 | AEAD | 2 | 28-byte AEAD metadata present |
-| Compressed | 3 | Payload is compressed (inner) |
+| Truncated | 3 | Optional fields omitted (Latch) |
+| Compressed | 4 | Payload is zstd (gateway-only) |
 
-Rules enforced by `lep.Validate`:
+Rules: Encrypted ↔ AEAD; AEAD requires Authenticated.
 
-- Encrypted and AEAD are both set or both clear
-- AEAD requires Authenticated
+## AEAD (XChaCha20-Poly1305)
 
-## AEAD metadata (28 bytes)
-
-After the 24-byte header when AEAD is set:
+Metadata after 24-byte header:
 
 | Offset | Size | Field |
 |--------|------|--------|
-| 0 | 1 | alg (`1` = ChaCha20-Poly1305) |
-| 1 | 1 | key_id_len (must be 8) |
-| 2–9 | 8 | key_id |
-| 10–21 | 12 | nonce |
-| 22–27 | 6 | reserved (zero) |
+| 0 | 24 | XChaCha20 nonce |
+| 24 | 4 | key_id u32 LE |
 
-AAD is header bytes `[0:20]` (magic through `payload_length`, no header CRC).
+Wire:
 
-Wire after header:
-
-```text
-metadata(28) || ciphertext || payload_crc(4) || tag(16)
+```
+header(24) || metadata(28) || ciphertext || payload_crc(4) || tag(16)
 ```
 
-`payload_crc` covers `metadata || ciphertext`.
+- AAD = `header(24) || metadata(28)` (includes header CRC)
+- payload_crc covers `metadata || ciphertext`
+- Device key derivation:
 
-## Auth-only (HMAC-SHA256)
+```
+salt = key_id||sequence||event_id  (12 bytes LE)
+derived = HKDF-SHA256(salt, ikm=device_key, info="laststate/latch/envelope/v1", len=32)
+```
 
-When Authenticated is set without AEAD:
+## Auth-only (HMAC-SHA-256)
 
-```text
+```
 header(24) || payload || payload_crc(4) || mac(32)
+mac = HMAC-SHA256(key, header || payload || payload_crc)
 ```
 
-```text
-mac = HMAC-SHA256(key, header[0:20] || payload)
-```
-
-Auth-only has no key ID on the wire; config maps sources to keys (or uses a default).
-
-## Key rotation
-
-Configure several 8-byte IDs. Seal uses the active key; Open looks up the ID on
-the envelope (AEAD) or tries known keys (HMAC).
+Key id is out of band (config). Prefer numeric decimal ids matching Latch `key_id`.
 
 ## Compression
 
-If Compressed is set, plaintext before Seal (or after Open) is a zstd frame.
-Order: TLV encode → optional zstd → optional Seal.
+Bit 4 `Compressed`: entire payload is zstd. Order: TLV → optional zstd → optional Seal.
+Devices (Latch) do not set bit 4; bit 3 is Truncated only.
 
-## Forwarding
+## Replay
 
-| Mode | Behavior |
-|------|----------|
-| Opaque (default) | Deliver raw bytes |
-| Verify / decrypt on ingest | Open locally; store still holds original bytes |
-| Re-encrypt per dest | Future: Open with device key, Seal with dest key |
-
-## Replay (optional)
-
-When enabled, Relay remembers `(source_id, event_id)` → payload hash and rejects
-a *different* payload reusing the same device event id. Identical retransmits
-still yield `ACK_DUPLICATE`.
+Optional: remember `(source_id, event_id)` → payload hash; reject different payload same id.
+Identical retransmit → ACK_DUPLICATE.

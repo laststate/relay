@@ -5,13 +5,16 @@ package lep
 
 import (
 	"bytes"
-	"crypto/sha256"
+	"hash/crc32"
 	"testing"
 )
 
-func testKey(id string, seed byte) Key {
-	material := bytes.Repeat([]byte{seed}, 32)
-	return Key{ID: KeyIDFromString(id), Key: material}
+func testKey(numeric uint32, seed byte) Key {
+	return Key{
+		NumericID: numeric,
+		ID:        KeyIDFromNumeric(numeric),
+		Key:       bytes.Repeat([]byte{seed}, 32),
+	}
 }
 
 func TestSealOpenAEADRoundTrip(t *testing.T) {
@@ -19,14 +22,17 @@ func TestSealOpenAEADRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	key := testKey("device-1", 0x42)
-	ring := NewMemoryKeyring([]Key{key}, key.ID, key.ID)
+	key := testKey(1, 0x42)
+	ring := NewMemoryKeyring([]Key{key}, key.NumericID, key.NumericID)
 	sealed, err := Seal(plain, ring, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Validate(sealed); err != nil {
 		t.Fatalf("sealed validation: %v", err)
+	}
+	if sealed[HeaderSize+24] != 1 || sealed[HeaderSize+25] != 0 {
+		t.Fatalf("expected key_id 1 in metadata, got %x", sealed[HeaderSize+24:HeaderSize+28])
 	}
 	opened, err := Open(sealed, ring)
 	if err != nil {
@@ -46,8 +52,8 @@ func TestSealOpenHMACRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	key := testKey("auth", 0x11)
-	ring := NewMemoryKeyring([]Key{key}, key.ID, key.ID)
+	key := testKey(7, 0x11)
+	ring := NewMemoryKeyring([]Key{key}, key.NumericID, key.NumericID)
 	sealed, err := Seal(plain, ring, false)
 	if err != nil {
 		t.Fatal(err)
@@ -63,22 +69,49 @@ func TestSealOpenHMACRoundTrip(t *testing.T) {
 
 func TestOpenRejectsWrongKey(t *testing.T) {
 	plain, _ := Encode(Version1, 1, 0, 1, 2, []byte{1, 0, 1, 0, 9})
-	key := testKey("a", 1)
-	ring := NewMemoryKeyring([]Key{key}, key.ID, key.ID)
+	key := testKey(1, 1)
+	ring := NewMemoryKeyring([]Key{key}, key.NumericID, key.NumericID)
 	sealed, err := Seal(plain, ring, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	other := testKey("a", 2) // same id, different material
-	bad := NewMemoryKeyring([]Key{other}, other.ID, other.ID)
+	other := testKey(1, 2)
+	bad := NewMemoryKeyring([]Key{other}, other.NumericID, other.NumericID)
 	if _, err := Open(sealed, bad); err == nil {
 		t.Fatal("expected authentication failure")
 	}
 }
 
+func TestTruncatedFlagPreserved(t *testing.T) {
+	plain, err := Encode(Version1, 1, 0, 1, 2, []byte{1, 0, 1, 0, 9})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain[7] = FlagTruncated
+	sum := crc32.ChecksumIEEE(plain[:20])
+	plain[20] = byte(sum)
+	plain[21] = byte(sum >> 8)
+	plain[22] = byte(sum >> 16)
+	plain[23] = byte(sum >> 24)
+	if _, err := Validate(plain); err != nil {
+		t.Fatal(err)
+	}
+	key := testKey(3, 9)
+	ring := NewMemoryKeyring([]Key{key}, 3, 3)
+	sealed, err := Seal(plain, ring, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened, err := Open(sealed, ring)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opened[7]&FlagTruncated == 0 {
+		t.Fatal("truncated flag lost")
+	}
+}
+
 func TestCompressRoundTrip(t *testing.T) {
-	payload := bytes.Repeat([]byte{1, 0, 4, 0, 't', 'e', 's', 't'}, 40)
-	// fix TLV lengths properly
 	fields := []TLV{{Type: 1, Value: bytes.Repeat([]byte("x"), 200)}}
 	plain, err := EncodeTLVs(Version1, 1, 0, 1, 1, fields)
 	if err != nil {
@@ -94,6 +127,9 @@ func TestCompressRoundTrip(t *testing.T) {
 	if compressed[7]&FlagCompressed == 0 {
 		t.Fatal("missing compressed flag")
 	}
+	if compressed[7]&FlagTruncated != 0 {
+		t.Fatal("compressed must not set truncated bit")
+	}
 	out, err := DecompressPayload(compressed)
 	if err != nil {
 		t.Fatal(err)
@@ -101,7 +137,6 @@ func TestCompressRoundTrip(t *testing.T) {
 	if !bytes.Equal(out, plain) {
 		t.Fatal("compress round-trip mismatch")
 	}
-	_ = sha256.Sum256(payload)
 }
 
 func TestReplayCache(t *testing.T) {
@@ -140,5 +175,14 @@ func TestEncodeMatchesValidate(t *testing.T) {
 	}
 	if env.Sequence != 7 || env.EventID != 9 || env.PayloadLength != 6 {
 		t.Fatalf("%#v", env)
+	}
+}
+
+func TestFlagBits(t *testing.T) {
+	if FlagTruncated != 1<<3 {
+		t.Fatalf("FlagTruncated=%d", FlagTruncated)
+	}
+	if FlagCompressed != 1<<4 {
+		t.Fatalf("FlagCompressed=%d", FlagCompressed)
 	}
 }
