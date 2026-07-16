@@ -86,7 +86,12 @@ func (service Service) Accept(ctx context.Context, sourceID string, raw []byte) 
 		}
 	}
 
-	result, err := service.Store.Put(ctx, sourceID, raw, envelope)
+	var targets []string
+	if service.Router != nil {
+		targets = service.Router(sourceID, envelope)
+	}
+	// Put queues destinations in the same SQLite transaction as the event row.
+	result, err := service.Store.Put(ctx, sourceID, raw, envelope, targets...)
 	if err != nil {
 		wrapped := &Error{Code: CodeInternal, Err: err}
 		if errors.Is(err, store.ErrSpoolFull) {
@@ -97,16 +102,6 @@ func (service Service) Accept(ctx context.Context, sourceID string, raw []byte) 
 	}
 	if service.Replay != nil && !result.Duplicate {
 		service.Replay.Record(sourceID, envelope.EventID, raw)
-	}
-
-	var targets []string
-	if service.Router != nil {
-		targets = service.Router(sourceID, envelope)
-	}
-	if err := service.Store.QueueDestinations(ctx, result.Event.ID, targets); err != nil {
-		wrapped := &Error{Code: CodeInternal, Err: fmt.Errorf("queue destinations: %w", err)}
-		service.notifyError(sourceID, wrapped)
-		return result, wrapped
 	}
 	if service.Hooks.OnAccept != nil {
 		service.Hooks.OnAccept(sourceID, result)

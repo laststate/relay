@@ -175,9 +175,23 @@ func OpenWithOptions(dataDir string, options Options) (*Store, error) {
 	}
 	// A process can die after claiming a delivery. Stale claims are made ready
 	// again at startup; idempotency protects the remote side from duplicates.
-	if _, err := db.Exec(`UPDATE event_destinations SET state='RETRY', lease_token=NULL, lease_until=NULL, next_attempt_at=? WHERE state='DELIVERING'`, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := db.Exec(`UPDATE event_destinations SET state='RETRY', lease_token=NULL, lease_until=NULL, next_attempt_at=? WHERE state='DELIVERING'`, now); err != nil {
 		db.Close()
 		return nil, err
+	}
+	// Crash recovery: event row without destination rows (pre-atomic Put+queue).
+	if store.options.DeliveryMode != "local-only" {
+		if _, err := db.Exec(`INSERT OR IGNORE INTO event_destinations(event_id,destination_id,state,attempt_count,next_attempt_at)
+			SELECT e.id, d.id, 'READY', 0, ?
+			FROM events e
+			CROSS JOIN destinations d
+			WHERE d.enabled=1
+			  AND e.state IN ('PERSISTED','PARTIALLY_DELIVERED')
+			  AND NOT EXISTS (SELECT 1 FROM event_destinations ed WHERE ed.event_id=e.id)`, now); err != nil {
+			db.Close()
+			return nil, err
+		}
 	}
 	return store, nil
 }
@@ -450,19 +464,29 @@ func (store *Store) QueueDestinations(ctx context.Context, eventID string, targe
 		return nil
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
+	return store.queueDestinations(ctx, store.db, eventID, targets, now)
+}
+
+type sqlExec interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+func (store *Store) queueDestinations(ctx context.Context, exec sqlExec, eventID string, targets []string, now string) error {
 	if len(targets) > 0 {
 		for _, destinationID := range targets {
-			if _, err := store.db.ExecContext(ctx, `INSERT OR IGNORE INTO event_destinations(event_id,destination_id,state,attempt_count,next_attempt_at) SELECT ?,id,'READY',0,? FROM destinations WHERE id=? AND enabled=1`, eventID, now, destinationID); err != nil {
+			if _, err := exec.ExecContext(ctx, `INSERT OR IGNORE INTO event_destinations(event_id,destination_id,state,attempt_count,next_attempt_at) SELECT ?,id,'READY',0,? FROM destinations WHERE id=? AND enabled=1`, eventID, now, destinationID); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
-	_, err := store.db.ExecContext(ctx, `INSERT OR IGNORE INTO event_destinations(event_id,destination_id,state,attempt_count,next_attempt_at) SELECT ?,id,'READY',0,? FROM destinations WHERE enabled=1`, eventID, now)
+	_, err := exec.ExecContext(ctx, `INSERT OR IGNORE INTO event_destinations(event_id,destination_id,state,attempt_count,next_attempt_at) SELECT ?,id,'READY',0,? FROM destinations WHERE enabled=1`, eventID, now)
 	return err
 }
 
-func (store *Store) Put(ctx context.Context, sourceID string, raw []byte, envelope lep.Envelope) (Result, error) {
+// Put stores raw LEP bytes and queues destinations in the same SQLite transaction.
+// targets empty means every enabled destination (mirror default).
+func (store *Store) Put(ctx context.Context, sourceID string, raw []byte, envelope lep.Envelope, targets ...string) (Result, error) {
 	if err := store.ensureCapacity(ctx, int64(len(raw))); err != nil {
 		return Result{}, err
 	}
@@ -506,12 +530,17 @@ func (store *Store) Put(ctx context.Context, sourceID string, raw []byte, envelo
 	_, err = tx.ExecContext(ctx, `INSERT INTO events(id,payload_hash,raw_object_path,protocol_version,event_type,architecture,flags,sequence,source_event_id,source_id,received_at,state,size_bytes,last_seen_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, event.ID, event.PayloadHash, event.RawObjectPath, event.Envelope.Version, event.Envelope.Type, event.Envelope.Architecture, event.Envelope.Flags, event.Envelope.Sequence, event.Envelope.EventID, event.SourceID, now, event.State, event.Size, now)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			return store.Put(ctx, sourceID, raw, envelope)
+			return store.Put(ctx, sourceID, raw, envelope, targets...)
 		}
 		return Result{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO event_observations(event_id,source_id,observed_at,is_duplicate) VALUES(?,?,?,0)`, event.ID, sourceID, now); err != nil {
 		return Result{}, err
+	}
+	if store.options.DeliveryMode != "local-only" {
+		if err := store.queueDestinations(ctx, tx, event.ID, targets, now); err != nil {
+			return Result{}, err
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		return Result{}, err
