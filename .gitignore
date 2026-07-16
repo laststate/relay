@@ -28,4 +28,5 @@ Thumbs.db
 coverage.out
 *.pprof
 
-testdata/
+# Runtime fixture dumps at repo root only (keep internal/*/testdata for goldens)
+/testdata/
