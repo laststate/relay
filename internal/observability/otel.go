@@ -15,7 +15,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/semconv/v1.24.0"
-	"google.golang.org/grpc/credentials"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Config holds OpenTelemetry configuration.
@@ -98,7 +98,7 @@ func Setup(ctx context.Context, cfg Config) (func(), error) {
 }
 
 // StartSpan creates a new span with common Relay attributes.
-func StartSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (context.Context, interface{ End() }) {
+func StartSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
 	spanCtx, span := otel.Tracer("relay").Start(ctx, name)
 	for _, attr := range attrs {
 		span.SetAttributes(attr)
