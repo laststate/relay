@@ -20,10 +20,10 @@ import (
 
 // Config holds OpenTelemetry configuration.
 type Config struct {
-	Enabled       bool
-	TraceEndpoint string // e.g., "https://otel-collector:4318"
+	Enabled        bool
+	TraceEndpoint  string // e.g., "https://otel-collector:4318"
 	MetricEndpoint string // e.g., "https://otel-collector:4318"
-	ServiceName   string
+	ServiceName    string
 	ServiceVersion string
 }
 
