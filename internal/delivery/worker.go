@@ -7,6 +7,7 @@ package delivery
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -57,6 +58,7 @@ type Worker struct {
 	mu           sync.Mutex
 	circuits     map[string]*circuit
 	capabilities map[string]capabilityCache
+	rng          *rand.Rand // per-worker random source for jitter
 }
 
 type Hooks struct {
@@ -119,11 +121,19 @@ func (worker *Worker) defaults() {
 	if worker.capabilities == nil {
 		worker.capabilities = map[string]capabilityCache{}
 	}
+	if worker.rng == nil {
+		worker.rng = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
 }
 
 func defaultHTTPClient() *http.Client {
 	return &http.Client{
 		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				MinVersion: tls.VersionTLS12,
+			},
+		},
 		CheckRedirect: func(request *http.Request, via []*http.Request) error {
 			// Never forward bearer credentials to a redirected host. Trace
 			// endpoints are expected to be stable and redirects are suspicious.
@@ -618,7 +628,7 @@ func (worker *Worker) backoff(attempt int) time.Duration {
 	if worker.Jitter && delay > 0 {
 		// Full jitter in [50%, 100%] avoids synchronized retry storms while
 		// preventing unexpectedly tiny retry intervals.
-		factor := 0.5 + rand.Float64()*0.5
+		factor := 0.5 + worker.rng.Float64()*0.5
 		delay = time.Duration(float64(delay) * factor)
 	}
 	return delay
