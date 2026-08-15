@@ -7,7 +7,7 @@ write, optionally analyzes crashes locally, and forwards events with retries
 and idempotency.
 
 [![CI](https://github.com/laststate/relay/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/laststate/relay/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE.md)
 [![Go Reference](https://img.shields.io/badge/go-reference-1.26+-007D9C.svg)](go.mod)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED.svg)](Dockerfile)
 
@@ -141,4 +141,4 @@ Probe HIL are still roadmap items (adapter SDK covers custom transports).
 
 ## License
 
-Apache-2.0 — [`LICENSE`](LICENSE)
+Apache-2.0 — [`LICENSE.md`](LICENSE.md)
