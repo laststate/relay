@@ -3,15 +3,13 @@
 Offline-first gateway between devices running **Latch** and one or more **Trace**
 backends. Relay accepts LEP envelopes (serial, TCP, HTTP, MQTT, adapters, or
 files), validates them, stores them on disk, ACKs the device only after the
-write, optionally analyzes crashes locally, and forwards events with retries and
-idempotency.
+write, optionally analyzes crashes locally, and forwards events with retries
+and idempotency.
 
-```mermaid
-flowchart LR
-  Device[Latch / Probe] -->|LEP| Relay[laststate-relay]
-  Relay -->|persist + ACK| Disk[(local spool)]
-  Relay -->|HTTP batch| Trace[Trace]
-```
+[![CI](https://github.com/laststate/relay/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/laststate/relay/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Go Reference](https://img.shields.io/badge/go-reference-1.26+-007D9C.svg)](go.mod)
+[![Docker](https://img.shields.io/badge/docker-ready-2496ED.svg)](Dockerfile)
 
 ## Guarantees
 
@@ -133,3 +131,14 @@ backup · restore · config · version
 Solid for lab and pilot gateways. Not tagged `v1.0.0` yet — that waits on
 Latch/Trace E2E, HIL, protocol freeze, and a security review. CAN/BLE/LoRa and
 Probe HIL are still roadmap items (adapter SDK covers custom transports).
+
+## Community and security
+
+- [Contributing guide](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Code of conduct](CODE_OF_CONDUCT.md)
+- [Support](SUPPORT.md)
+
+## License
+
+Apache-2.0 — [`LICENSE`](LICENSE)
