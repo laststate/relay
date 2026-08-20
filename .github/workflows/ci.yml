@@ -3,6 +3,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
   workflow_dispatch:
   workflow_call:
 permissions:
@@ -11,46 +12,137 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  test:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.x'
           cache: true
-      - run: go mod download
-      - name: Check formatting
-        shell: bash
-        run: test -z "$(gofmt -l cmd internal)"
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@971e284b6de2efb787e3f63fd9881b3ac029d600 # v6
+        with:
+          version: latest
+          args: --timeout=5m0s
       - run: go vet ./...
-      - name: Protocol LEP goldens (vendored)
-        shell: bash
-        run: go test ./internal/lep -run TestProtocolVectors -count=1 -v
-      - name: Test
-        shell: bash
-        run: go test -race ./...
-      - run: go build ./cmd/laststate-relay
 
-  security:
-    runs-on: ubuntu-latest
+  test:
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.x'
-      - run: go install golang.org/x/vuln/cmd/govulncheck@latest
-      - run: govulncheck ./...
+          cache: true
+      - name: Run tests with race detector
+        shell: bash
+        run: go test -race -coverprofile=coverage.txt ./...
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          name: coverage
+          path: coverage.txt
+          if-no-files-found: error
 
-  docker:
+  build:
     needs: test
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: docker/setup-buildx-action@v3
-      - name: Build Docker image
-        run: docker build -t laststate-relay:test .
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: true
+      - name: Build relay binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          go build -trimpath -ldflags "-s -w \
+            -X main.cliVersion=0.4.0 \
+            -X main.gitCommit=${GITHUB_SHA} \
+            -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -o dist/laststate-relay ./cmd/laststate-relay
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: relay-binary
+          path: dist/laststate-relay
+          if-no-files-found: error
+
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+      - name: Install govulncheck
+        shell: bash
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run govulncheck
+        shell: bash
+        run: govulncheck ./...
+      - name: Install Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: filesystem
+          security-checks: vuln
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: 1
+
+  sbom:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+      - name: Install syft
+        shell: bash
+        run: |
+          curl -sSfL https://github.com/anchore/syft/releases/download/v1.18.0/syft_1.18.0_linux_amd64.tar.gz | tar xz -C /usr/local/bin syft
+      - name: Generate SPDX SBOM
+        shell: bash
+        run: syft dir:. --quiet --output spdx-json=sbom.spdx.json
+      - name: Generate CycloneDX SBOM
+        shell: bash
+        run: syft dir:. --quiet --output cyclonedx-json=sbom.cdx.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sbom
+          path: |
+            sbom.spdx.json
+            sbom.cdx.json
+          if-no-files-found: error
+
+  upload-artifact:
+    needs: [build, sbom]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: relay-binary
+          path: dist/
+          merge-multiple: true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: relay-binary
+          path: dist/laststate-relay
+          if-no-files-found: error

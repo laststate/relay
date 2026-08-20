@@ -4,60 +4,197 @@ on:
     tags: ['v*']
 permissions:
   contents: read
+  packages: write
 jobs:
-  verify-tag:
+  check-tag:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.x'
-      - name: Require tag matches a CHANGELOG entry
+      - name: Validate tag format (semver)
+        shell: bash
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          tag="${GITHUB_REF_NAME}"
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "Tag '$tag' does not match semver pattern vMAJOR.MINOR.PATCH[-PRERELEASE]" >&2
+            exit 1
+          fi
+          version="${tag#v}"
           if ! grep -q "## \[${version}\]" CHANGELOG.md; then
             echo "Tag v${version} has no corresponding CHANGELOG entry" >&2
             exit 1
           fi
-  test:
-    needs: verify-tag
-    uses: ./.github/workflows/ci.yml
-  package:
-    needs: [verify-tag, test]
+
+  build-linux:
+    needs: check-tag
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    permissions:
-      contents: write
+        target:
+          - { os: ubuntu-latest, goos: linux, goarch: amd64, suffix: linux-amd64 }
+          - { os: ubuntu-latest, goos: linux, goarch: arm64, suffix: linux-arm64 }
+    runs-on: ${{ matrix.target.os }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.x'
-      - name: Build release binary
+          cache: true
+      - name: Build ${{ matrix.target.suffix }}
         shell: bash
         run: |
           mkdir -p dist
-          go build -trimpath -ldflags "-s -w \
-            -X main.cliVersion=${GITHUB_REF_NAME} \
-            -X main.gitCommit=$(git rev-parse --short HEAD) \
-            -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            -o dist/laststate-relay ./cmd/laststate-relay
-      - name: Build Docker image
-        if: startsWith(matrix.os, 'ubuntu')
-        run: docker build -t laststate-relay:${GITHUB_REF_NAME} .
+          CGO_ENABLED=0 GOOS=${{ matrix.target.goos }} GOARCH=${{ matrix.target.goarch }} \
+            go build -trimpath -ldflags "-s -w \
+              -X main.cliVersion=${GITHUB_REF_NAME} \
+              -X main.gitCommit=$(git rev-parse --short HEAD) \
+              -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              -o dist/laststate-relay-${{ matrix.target.suffix }} ./cmd/laststate-relay
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: relay-${{ matrix.os }}
-          path: dist/
+          name: relay-${{ matrix.target.suffix }}
+          path: dist/laststate-relay-${{ matrix.target.suffix }}
           if-no-files-found: error
-      - name: Create release
-        if: startsWith(matrix.os, 'ubuntu')
+
+  build-windows:
+    needs: check-tag
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: true
+      - name: Build windows-amd64
+        shell: bash
         run: |
-          assets=$(find dist -type f -print0 | xargs -0 -I{} echo "{}")
-          gh release create "${GITHUB_REF_NAME}" $assets --generate-notes --verify-tag
+          mkdir -p dist
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
+            go build -trimpath -ldflags "-s -w \
+              -X main.cliVersion=${GITHUB_REF_NAME} \
+              -X main.gitCommit=$(git rev-parse --short HEAD) \
+              -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              -o dist/laststate-relay-windows-amd64.exe ./cmd/laststate-relay
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: relay-windows-amd64
+          path: dist/laststate-relay-windows-amd64.exe
+          if-no-files-found: error
+
+  build-darwin:
+    needs: check-tag
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { os: macos-latest, goos: darwin, goarch: amd64, suffix: darwin-amd64 }
+          - { os: macos-latest, goos: darwin, goarch: arm64, suffix: darwin-arm64 }
+    runs-on: ${{ matrix.target.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: true
+      - name: Build ${{ matrix.target.suffix }}
+        shell: bash
+        run: |
+          mkdir -p dist
+          CGO_ENABLED=0 GOOS=${{ matrix.target.goos }} GOARCH=${{ matrix.target.goarch }} \
+            go build -trimpath -ldflags "-s -w \
+              -X main.cliVersion=${GITHUB_REF_NAME} \
+              -X main.gitCommit=$(git rev-parse --short HEAD) \
+              -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              -o dist/laststate-relay-${{ matrix.target.suffix }} ./cmd/laststate-relay
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: relay-${{ matrix.target.suffix }}
+          path: dist/laststate-relay-${{ matrix.target.suffix }}
+          if-no-files-found: error
+
+  docker:
+    needs: [build-linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/laststate/relay
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+      - name: Compute build date
+        id: date
+        shell: bash
+        run: echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${GITHUB_REF_NAME}
+            COMMIT=${GITHUB_SHA}
+            BUILD_DATE=${{ steps.date.outputs.build_date }}
+
+  publish:
+    needs: [build-linux, build-windows, build-darwin, docker]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: relay-*
+          path: dist/
+          merge-multiple: true
+      - name: Generate checksums
+        shell: bash
+        run: |
+          cd dist
+          shasum -a 256 * 2>/dev/null || sha256sum *
+          shasum -a 256 * > checksums.sha256
+      - name: Create release
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            dist/laststate-relay-linux-amd64
+            dist/laststate-relay-linux-arm64
+            dist/laststate-relay-windows-amd64.exe
+            dist/laststate-relay-darwin-amd64
+            dist/laststate-relay-darwin-arm64
+            dist/checksums.sha256
         env:
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

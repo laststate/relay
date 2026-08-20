@@ -35,7 +35,7 @@ and idempotency.
 ```bash
 go test ./...
 go build -trimpath -ldflags "-s -w \
-  -X main.cliVersion=v0.3.0-alpha \
+  -X main.cliVersion=v0.4.0 \
   -X main.gitCommit=$(git rev-parse --short HEAD) \
   -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   -o bin/laststate-relay ./cmd/laststate-relay

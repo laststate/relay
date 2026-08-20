@@ -5,7 +5,6 @@
 package admin
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
@@ -28,6 +27,7 @@ type Server struct {
 	SourceID      string
 	MaxBodyBytes  int64
 	MaxConcurrent int
+	SpeedLimit    RateLimitConfig
 	semaphore     chan struct{}
 }
 
@@ -58,7 +58,13 @@ func (server *Server) AdminHandler() http.Handler {
 	mux.HandleFunc("POST /v1/destinations/{id}/resume", server.resume)
 	mux.HandleFunc("POST /v1/spool/prune", server.prune)
 	mux.HandleFunc("POST /v1/spool/reconcile", server.reconcile)
-	return secureHeaders(server.authorize(server.AdminToken, mux))
+	// Health endpoints accessible without auth.
+	policies := EndpointAuth{
+		"/v1/health": AuthNone,
+		"/v1/ready":  AuthNone,
+	}
+	// All other admin routes require admin token.
+	return secureHeaders(withEndpointAuth(server, policies, AuthAdmin)(mux))
 }
 
 // IngestHandler does not mount admin routes.
@@ -68,24 +74,18 @@ func (server *Server) IngestHandler() http.Handler {
 	mux.HandleFunc("GET /v1/relay/capabilities", server.capabilities)
 	mux.HandleFunc("POST /v1/ingest", server.ingest)
 	mux.HandleFunc("POST /v1/events:batch", server.ingestBatch)
-	return secureHeaders(server.authorize(server.IngestToken, server.limitConcurrency(mux)))
+	handler := secureHeaders(withEndpointAuth(server, EndpointAuth{
+		"/v1/ingest/capabilities": AuthNone,
+		"/v1/relay/capabilities":  AuthNone,
+	}, AuthIngest)(server.limitConcurrency(mux)))
+	if server.SpeedLimit.RequestsPerSecond > 0 {
+		handler = RateLimitMiddleware(NewRateLimiter(server.SpeedLimit))(handler)
+	}
+	return handler
 }
 
 // Handler is retained for source compatibility but now returns admin-only API.
 func (server *Server) Handler() http.Handler { return server.AdminHandler() }
-
-func (server *Server) authorize(token string, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if token != "" {
-			provided := strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer ")
-			if len(provided) != len(token) || subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
-				writeError(writer, http.StatusUnauthorized, "unauthorized", "valid bearer token required")
-				return
-			}
-		}
-		next.ServeHTTP(writer, request)
-	})
-}
 
 func (server *Server) limitConcurrency(next http.Handler) http.Handler {
 	if server.MaxConcurrent <= 0 {
@@ -142,18 +142,18 @@ func (server *Server) ready(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (server *Server) events(writer http.ResponseWriter, request *http.Request) {
-	limit := 100
-	if raw := request.URL.Query().Get("limit"); raw != "" {
-		if value, err := strconv.Atoi(raw); err == nil && value > 0 && value <= 1000 {
-			limit = value
-		}
-	}
-	events, err := server.Store.List(request.Context(), limit)
+	offset, limit := parsePagination(request)
+	events, err := server.Store.List(request.Context(), limit, offset)
 	if err != nil {
 		writeError(writer, http.StatusInternalServerError, "store_error", err.Error())
 		return
 	}
-	writeJSON(writer, http.StatusOK, events)
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"events": events,
+		"total":  len(events),
+		"offset": offset,
+		"limit":  limit,
+	})
 }
 
 func (server *Server) event(writer http.ResponseWriter, request *http.Request) {
@@ -190,7 +190,15 @@ func (server *Server) destinations(writer http.ResponseWriter, request *http.Req
 		writeError(writer, http.StatusInternalServerError, "store_error", err.Error())
 		return
 	}
-	writeJSON(writer, http.StatusOK, items)
+	offset, limit := parsePagination(request)
+	_ = offset
+	_ = limit
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"destinations": items,
+		"total":        len(items),
+		"offset":       0,
+		"limit":        limit,
+	})
 }
 
 func (server *Server) pause(writer http.ResponseWriter, request *http.Request) {
@@ -386,4 +394,23 @@ func writeJSON(writer http.ResponseWriter, status int, value any) {
 
 func writeError(writer http.ResponseWriter, status int, code, message string) {
 	writeJSON(writer, status, map[string]any{"error": map[string]string{"code": code, "message": message}})
+}
+
+// parsePagination extracts offset and limit from query parameters, applying
+// sensible defaults and hard caps to prevent runaway queries.
+func parsePagination(request *http.Request) (offset, limit int) {
+	offset = 0
+	limit = 100
+	const maxLimit = 500
+	if raw := request.URL.Query().Get("limit"); raw != "" {
+		if value, err := strconv.Atoi(raw); err == nil && value > 0 && value <= maxLimit {
+			limit = value
+		}
+	}
+	if raw := request.URL.Query().Get("offset"); raw != "" {
+		if value, err := strconv.Atoi(raw); err == nil && value >= 0 {
+			offset = value
+		}
+	}
+	return offset, limit
 }

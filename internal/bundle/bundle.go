@@ -77,7 +77,7 @@ func Export(ctx context.Context, relay *store.Store, output string, limit int) (
 
 // ExportWithOptions is Export plus optional Ed25519 signing of the canonical manifest.
 func ExportWithOptions(ctx context.Context, relay *store.Store, output string, limit int, opts ExportOptions) (Manifest, error) {
-	events, err := relay.List(ctx, limit)
+	events, err := relay.List(ctx, limit, 0)
 	if err != nil {
 		return Manifest{}, err
 	}

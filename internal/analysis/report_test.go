@@ -26,6 +26,61 @@ func TestAnalyzeCortexMFields(t *testing.T) {
 	}
 }
 
+func TestDecodeCPU64Complete(t *testing.T) {
+	value := make([]byte, 4+36*8)
+	value[0] = 1    // encoding
+	value[1] = 0x01 // COMPLETE
+	value[2] = ArchRISCV64
+	value[3] = 8                                                      // word size
+	binary.LittleEndian.PutUint64(value[4+2*8:], 0xdeadbeef)          // x2
+	binary.LittleEndian.PutUint64(value[4+31*8:], 0x1234567890abcdef) // x31 (sp)
+	binary.LittleEndian.PutUint64(value[4+32*8:], 0x00000000f0000000) // mstatus
+	binary.LittleEndian.PutUint64(value[4+33*8:], 15)                 // mcause
+	binary.LittleEndian.PutUint64(value[4+34*8:], 0x1234)             // mtval
+	binary.LittleEndian.PutUint64(value[4+35*8:], 0x80001234)         // mepc
+
+	cpu64, warn := decodeCPU64(value)
+	if cpu64 == nil {
+		t.Fatal("expected CPU64 decode")
+	}
+	if warn != "" {
+		t.Errorf("unexpected warning: %s", warn)
+	}
+	if !cpu64.Complete || cpu64.Architecture != ArchRISCV64 || cpu64.WordSize != 8 {
+		t.Fatalf("cpu64: %#v", cpu64)
+	}
+	if cpu64.X[2] != 0xdeadbeef || cpu64.X[31] != 0x1234567890abcdef {
+		t.Errorf("registers wrong: %#v", cpu64.X)
+	}
+	if cpu64.MSTATUS != 0x00000000f0000000 || cpu64.MCAUSE != 15 ||
+		cpu64.MTVAL != 0x1234 || cpu64.MEPC != 0x80001234 {
+		t.Errorf("csr wrong: %#v", cpu64)
+	}
+}
+
+func TestDecodeCPU64Unavailable(t *testing.T) {
+	value := []byte{1, 0x02, ArchRISCV64, 8}
+	cpu64, warn := decodeCPU64(value)
+	if cpu64 == nil {
+		t.Fatal("expected CPU64 decode")
+	}
+	if warn != "" {
+		t.Errorf("unexpected warning: %s", warn)
+	}
+	if cpu64.Complete {
+		t.Error("expected incomplete CPU64")
+	}
+	if len(cpu64.X) != 0 {
+		t.Errorf("unexpected registers: %#v", cpu64.X)
+	}
+}
+
+func TestDecodeCPU64Truncated(t *testing.T) {
+	if _, warn := decodeCPU64([]byte{1, 0x01}); warn == "" {
+		t.Error("expected warning for truncated CPU64")
+	}
+}
+
 func makeEnvelope(payload []byte) []byte {
 	raw := make([]byte, 24+len(payload)+4)
 	copy(raw, "LSTP")

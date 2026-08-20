@@ -16,6 +16,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -53,9 +54,10 @@ import (
 )
 
 var (
-	cliVersion = "dev"
-	gitCommit  = "unknown"
-	buildDate  = "unknown"
+	cliVersion    = "dev"
+	gitCommit     = "unknown"
+	buildDate     = "unknown"
+	requestLogger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 )
 
 func main() {
@@ -390,12 +392,12 @@ func tryExternalSymbolizer(cfg config.Config, artifactPath string, report analys
 	binaryPath := cfg.Analysis.LLVMSymbolizer
 	style := "llvm"
 	switch report.Architecture {
-	case analysis.ArchRISCV:
+	case analysis.ArchRISCV, analysis.ArchRISCV64:
 		if cfg.Analysis.RISCVAddr2Line != "" {
 			binaryPath = cfg.Analysis.RISCVAddr2Line
 			style = "addr2line"
 		}
-	case analysis.ArchCortexM, analysis.ArchARMA:
+	case analysis.ArchCortexM:
 		if cfg.Analysis.ARMAddr2Line != "" && binaryPath == "" {
 			binaryPath = cfg.Analysis.ARMAddr2Line
 			style = "addr2line"
@@ -768,7 +770,8 @@ func runCmd(args []string) error {
 
 	adminServer := &admin.Server{Store: relay, Ingest: service, AdminToken: adminToken, SourceID: "admin"}
 	spawn("admin", func(ctx context.Context) error {
-		return serveHTTP(ctx, cfg.Admin.Listen, adminServer.AdminHandler(), cfg.Admin.ReadTimeout, cfg.Admin.WriteTimeout, cfg.Admin.IdleTimeout, cfg.Admin.TLS)
+		handler := admin.RequestLoggingMiddleware(requestLogger)(adminServer.AdminHandler())
+		return serveHTTP(ctx, cfg.Admin.Listen, handler, cfg.Admin.ReadTimeout, cfg.Admin.WriteTimeout, cfg.Admin.IdleTimeout, cfg.Admin.TLS)
 	})
 	if cfg.Metrics.Enabled {
 		spawn("metrics", func(ctx context.Context) error {
@@ -779,7 +782,6 @@ func runCmd(args []string) error {
 		if !source.IsEnabled() {
 			continue
 		}
-		source := source
 		switch source.Type {
 		case "directory":
 			spawn("source "+source.ID, func(ctx context.Context) error { return watchDirectory(ctx, service, source, publish) })
@@ -794,14 +796,29 @@ func runCmd(args []string) error {
 			if err != nil {
 				return fmt.Errorf("source %s token: %w", source.ID, err)
 			}
-			ingestServer := &admin.Server{Store: relay, Ingest: service, IngestToken: token, SourceID: source.ID, MaxBodyBytes: source.HTTP.MaxBodyBytes, MaxConcurrent: source.HTTP.MaxConcurrent}
+			ingestServer := &admin.Server{
+				Store: relay, Ingest: service, IngestToken: token, SourceID: source.ID,
+				MaxBodyBytes: source.HTTP.MaxBodyBytes, MaxConcurrent: source.HTTP.MaxConcurrent,
+				SpeedLimit: admin.RateLimitConfig{
+					RequestsPerSecond: source.HTTP.RequestsPerSecond,
+					BurstSize:         source.HTTP.BurstSize,
+					MaxKeys:           source.HTTP.RateLimitMaxKeys,
+				},
+			}
 			spawn("source "+source.ID, func(ctx context.Context) error {
-				return serveHTTP(ctx, source.HTTP.Listen, ingestServer.IngestHandler(), source.HTTP.ReadTimeout, source.HTTP.WriteTimeout, source.HTTP.IdleTimeout, source.HTTP.TLS)
+				handler := admin.RequestLoggingMiddleware(requestLogger)(ingestServer.IngestHandler())
+				return serveHTTP(ctx, source.HTTP.Listen, handler, source.HTTP.ReadTimeout, source.HTTP.WriteTimeout, source.HTTP.IdleTimeout, source.HTTP.TLS)
 			})
 		case "mqtt":
 			spawn("source "+source.ID, func(ctx context.Context) error { return mqttSource(ctx, service, source, publish) })
 		case "adapter":
 			spawn("source "+source.ID, func(ctx context.Context) error { return adapterSource(ctx, service, source, publish) })
+		case "ble":
+			spawn("source "+source.ID, func(ctx context.Context) error { return bleSource(ctx, service, source, publish) })
+		case "can":
+			spawn("source "+source.ID, func(ctx context.Context) error { return canSource(ctx, service, source, publish) })
+		case "lorawan":
+			spawn("source "+source.ID, func(ctx context.Context) error { return lorawanSource(ctx, service, source, publish) })
 		}
 	}
 	spawn("retention", func(ctx context.Context) error {
@@ -1234,6 +1251,74 @@ func adapterSource(ctx context.Context, service ingest.Service, src config.Sourc
 		return nil
 	}
 	return err
+}
+
+// Experimental collectors. The BLE, CAN, and LoRaWAN transports are stubs that
+// depend on platform support (BlueZ, SocketCAN, LoRaWAN network servers) and
+// are not yet recommended for production. They follow the same ingest contract
+// as the other sources: every collected payload is framed as raw LEP by default.
+func bleSource(ctx context.Context, service ingest.Service, src config.Source, publish func(ui.DashboardMsg)) error {
+	scanner := mqttsource.NewBLEScanner(mqttsource.BLEConfig{
+		Adapter:         src.BLE.Adapter,
+		ScanDuration:    src.BLE.ScanDuration,
+		ServiceUUID:     src.BLE.ServiceUUID,
+		CharUUID:        src.BLE.CharUUID,
+		NotifyEnabled:   src.BLE.NotifyEnabled,
+		RSSIThreshold:   src.BLE.RSSIThreshold,
+		MaxDevices:      src.BLE.MaxDevices,
+		FilterByAddress: src.BLE.FilterByAddress,
+	}, requestLogger)
+	publish(ui.DashboardMsg{Source: &ui.SourceState{ID: src.ID, Type: "ble", State: "up", Detail: src.BLE.Adapter}})
+	return scanner.Run(ctx, func(_ *mqttsource.BLEDevice, _ *mqttsource.BLECharacteristic, payload []byte) error {
+		_, err := service.Accept(ctx, src.ID, payload)
+		if err != nil {
+			publish(ui.DashboardMsg{Event: &ui.Event{Time: time.Now(), Kind: ui.EventError, Source: src.ID, Message: "ble frame rejected", Detail: err.Error()}})
+		}
+		return nil
+	})
+}
+
+func canSource(ctx context.Context, service ingest.Service, src config.Source, publish func(ui.DashboardMsg)) error {
+	publish(ui.DashboardMsg{Source: &ui.SourceState{ID: src.ID, Type: "can", State: "up", Detail: src.CAN.Interface}})
+	return mqttsource.RunCAN(ctx, mqttsource.CANConfig{
+		Interface:   src.CAN.Interface,
+		Baudrate:    src.CAN.Baudrate,
+		FDEnabled:   src.CAN.FDEnabled,
+		BRS:         src.CAN.BRS,
+		FilterID:    src.CAN.FilterID,
+		FilterMask:  src.CAN.FilterMask,
+		Protocol:    src.CAN.Protocol,
+		AdapterPath: src.CAN.AdapterPath,
+		RemoteHost:  src.CAN.RemoteHost,
+		RemotePort:  src.CAN.RemotePort,
+	}, func(_ mqttsource.CANFrame, payload []byte) error {
+		_, err := service.Accept(ctx, src.ID, payload)
+		if err != nil {
+			publish(ui.DashboardMsg{Event: &ui.Event{Time: time.Now(), Kind: ui.EventError, Source: src.ID, Message: "can frame rejected", Detail: err.Error()}})
+		}
+		return nil
+	})
+}
+
+func lorawanSource(ctx context.Context, service ingest.Service, src config.Source, publish func(ui.DashboardMsg)) error {
+	client := mqttsource.NewLoRaWANClient(mqttsource.LoRaWANConfig{
+		Server:     src.LoRaWAN.Server,
+		APIKey:     src.LoRaWAN.APIKey,
+		NetworkID:  src.LoRaWAN.NetworkID,
+		DeviceEUI:  src.LoRaWAN.DeviceEUI,
+		Port:       src.LoRaWAN.Port,
+		Protocol:   src.LoRaWAN.Protocol,
+		TLSEnabled: src.LoRaWAN.TLSEnabled,
+		MaxRetries: src.LoRaWAN.MaxRetries,
+	}, requestLogger)
+	publish(ui.DashboardMsg{Source: &ui.SourceState{ID: src.ID, Type: "lorawan", State: "up", Detail: src.LoRaWAN.Server}})
+	return client.Run(ctx, func(_ mqttsource.LoRaWANUplink, payload []byte) error {
+		_, err := service.Accept(ctx, src.ID, payload)
+		if err != nil {
+			publish(ui.DashboardMsg{Event: &ui.Event{Time: time.Now(), Kind: ui.EventError, Source: src.ID, Message: "lorawan frame rejected", Detail: err.Error()}})
+		}
+		return nil
+	})
 }
 
 func clientTLSConfig(cfg config.TLS) (*tls.Config, error) {

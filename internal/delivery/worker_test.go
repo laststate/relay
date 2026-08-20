@@ -319,7 +319,7 @@ func TestWorkerBatchDelivery(t *testing.T) {
 			ct := r.Header.Get("Content-Type")
 			_ = ct // track batch content type
 			body, _ := json.Marshal(map[string]interface{}{
-				"accepted": []map[string]string{},
+				"accepted":   []map[string]string{},
 				"duplicates": []map[string]string{},
 				"rejected":   []map[string]string{},
 			})
@@ -613,11 +613,11 @@ func TestNewWorkerDefaults(t *testing.T) {
 
 func TestBackoff(t *testing.T) {
 	w := &Worker{
-		MinDelay: time.Second,
-		MaxDelay: 30 * time.Second,
+		MinDelay:   time.Second,
+		MaxDelay:   30 * time.Second,
 		Multiplier: 2,
-		Jitter: false,
-		rng: newTestRand(t),
+		Jitter:     false,
+		rng:        newTestRand(t),
 	}
 	d0 := w.backoff(0)
 	d1 := w.backoff(1)

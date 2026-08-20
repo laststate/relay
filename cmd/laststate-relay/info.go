@@ -243,6 +243,12 @@ func collectChecks(cfg config.Config, cfgFound bool, opts infoOptions) []check {
 			checks = append(checks, check{kind: "http", name: "source " + src.ID, detail: "mqtt " + src.MQTT.Broker})
 		case "adapter":
 			checks = append(checks, check{kind: "dir", name: "source " + src.ID, detail: "adapter " + src.Adapter.Command})
+		case "ble":
+			checks = append(checks, check{kind: "dir", name: "source " + src.ID, detail: "ble " + src.BLE.Adapter})
+		case "can":
+			checks = append(checks, check{kind: "dir", name: "source " + src.ID, detail: "can " + src.CAN.Interface})
+		case "lorawan":
+			checks = append(checks, check{kind: "http", name: "source " + src.ID, detail: "lorawan " + src.LoRaWAN.Server})
 		}
 	}
 	for _, dst := range cfg.Destinations {

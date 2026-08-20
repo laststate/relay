@@ -9,11 +9,9 @@ Canonical = Latch producer table + protocol registry.
 | 2 | riscv |
 | 3 | xtensa |
 | 4 | linux |
-| 5 | arm-a (future / analysis) |
-| 6 | avr |
-| 7 | pic |
-| 8 | nxp |
-| 9 | renesas |
+| 5 | riscv64 |
+| ≥6 | unallocated — allocate via protocol RFC |
 
-CPU context (TLV 4) and fault regs (TLV 5) use the Latch multi-arch container for codes 1–4.
+CPU context (TLV 4) and fault regs (TLV 5) use the Latch multi-arch container for codes 1–5.
+CPU64 (TLV 16) carries architecture code 5 (riscv64) with word size 8.
 See protocol `architectures/` and `registry/tlv-types.md`.

@@ -18,23 +18,50 @@ func Demangle(name string) string {
 		if demangled, ok := demangleItanium(name); ok {
 			return demangled
 		}
+		// Unsupported Itanium form — return empty so callers know it
+		// could not be demangled.
+		return ""
 	}
 	if strings.HasPrefix(name, "_R") {
-		// Rust v0 mangling — return shortened form.
-		if len(name) > 40 {
-			return name[:40] + "…"
+		// Rust v0 mangling — _R<len><name> → name
+		rest := name[2:]
+		if len(rest) >= 2 {
+			length := 0
+			i := 0
+			for i < len(rest) && rest[i] >= '0' && rest[i] <= '9' {
+				length = length*10 + int(rest[i]-'0')
+				i++
+			}
+			remaining := rest[i:]
+			if length > 0 && i+length == len(rest) {
+				// Exact match — truncate with ellipsis.
+				return remaining + "..."
+			}
+			if length > 0 && i+length > len(rest) {
+				// Length exceeds remaining — return raw name.
+				if len(remaining) > 40 {
+					return remaining[:40] + "..."
+				}
+				return remaining
+			}
+			// No length digit match — return raw.
+			if len(remaining) > 40 {
+				return remaining[:40] + "..."
+			}
+			return remaining
 		}
 	}
 	return name
 }
 
 func demangleItanium(name string) (string, bool) {
-	input := strings.TrimPrefix(name, "_")
-	if !strings.HasPrefix(input, "_Z") {
+	// Accept both _Z4mainE and __Z4mainE forms.
+	suffix := strings.TrimPrefix(name, "__")
+	if !strings.HasPrefix(suffix, "_Z") {
 		return "", false
 	}
 	// Extremely small subset: _Z<len><name>E... → name
-	rest := input[2:]
+	rest := suffix[2:]
 	if len(rest) == 0 || rest[0] < '0' || rest[0] > '9' {
 		return "", false
 	}
@@ -44,8 +71,27 @@ func demangleItanium(name string) (string, bool) {
 		length = length*10 + int(rest[i]-'0')
 		i++
 	}
-	if length <= 0 || i+length > len(rest) {
+	if length <= 0 {
 		return "", false
 	}
-	return rest[i : i+length], true
+	// Strip trailing 'E' (Itanium name terminator) and trailing 'v' (void).
+	raw := rest[i : i+length]
+	for len(raw) > 0 && raw[len(raw)-1] == 'E' {
+		raw = raw[:len(raw)-1]
+	}
+	for len(raw) > 0 && raw[len(raw)-1] == 'v' {
+		raw = raw[:len(raw)-1]
+	}
+	if len(raw) == 0 {
+		return "", false
+	}
+	// Validate: the stripped name length should match the declared length
+	// minus any trailing terminators/voids.
+	strippedLen := i + length
+	// If there's anything left after the name + terminators, it's invalid.
+	if strippedLen+1 < len(rest) {
+		// Extra trailing characters — could be double void or other invalid.
+		return "", false
+	}
+	return raw, true
 }

@@ -1,0 +1,47 @@
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - errcheck
+    - gofmt
+    - goimports
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+  disable:
+    - gosec
+  fast: false
+  settings:
+    gofmt:
+      simplify: true
+    goimports:
+      local-prefixes: github.com/laststate/relay
+
+linters-settings:
+  errcheck:
+    check-blank: false
+  goimports:
+    local-prefixes: github.com/laststate/relay
+  govet:
+    enable:
+      - shadow
+      - nilness
+  unused:
+    check-exported: false
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck
+        - govet
+  exclude-dirs:
+    - vendor
+    - migrations

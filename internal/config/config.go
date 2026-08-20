@@ -79,14 +79,17 @@ type Source struct {
 	} `yaml:"udp"`
 
 	HTTP struct {
-		Listen        string        `yaml:"listen"`
-		Token         string        `yaml:"token"` // literal or secret reference
-		MaxBodyBytes  int64         `yaml:"max_body_bytes"`
-		ReadTimeout   time.Duration `yaml:"read_timeout"`
-		WriteTimeout  time.Duration `yaml:"write_timeout"`
-		IdleTimeout   time.Duration `yaml:"idle_timeout"`
-		MaxConcurrent int           `yaml:"max_concurrent"`
-		TLS           TLS           `yaml:"tls"`
+		Listen            string        `yaml:"listen"`
+		Token             string        `yaml:"token"` // literal or secret reference
+		MaxBodyBytes      int64         `yaml:"max_body_bytes"`
+		ReadTimeout       time.Duration `yaml:"read_timeout"`
+		WriteTimeout      time.Duration `yaml:"write_timeout"`
+		IdleTimeout       time.Duration `yaml:"idle_timeout"`
+		MaxConcurrent     int           `yaml:"max_concurrent"`
+		RequestsPerSecond float64       `yaml:"requests_per_second"`
+		BurstSize         int           `yaml:"burst_size"`
+		RateLimitMaxKeys  int           `yaml:"rate_limit_max_keys"`
+		TLS               TLS           `yaml:"tls"`
 	} `yaml:"http"`
 
 	MQTT struct {
@@ -98,6 +101,44 @@ type Source struct {
 		Password string   `yaml:"password"`
 		TLS      TLS      `yaml:"tls"`
 	} `yaml:"mqtt"`
+
+	// Experimental transports. These collectors are not yet recommended for
+	// production and are wired to best-effort stubs that may require platform
+	// support (BlueZ, SocketCAN, LoRaWAN network servers).
+	BLE struct {
+		Adapter         string        `yaml:"adapter"`
+		ScanDuration    time.Duration `yaml:"scan_duration"`
+		ServiceUUID     string        `yaml:"service_uuid"`
+		CharUUID        string        `yaml:"char_uuid"`
+		NotifyEnabled   bool          `yaml:"notify_enabled"`
+		RSSIThreshold   int           `yaml:"rssi_threshold"`
+		MaxDevices      int           `yaml:"max_devices"`
+		FilterByAddress []string      `yaml:"filter_by_address"`
+	} `yaml:"ble"`
+
+	CAN struct {
+		Interface   string `yaml:"interface"`
+		Baudrate    int    `yaml:"baudrate"`
+		FDEnabled   bool   `yaml:"fd_enabled"`
+		BRS         bool   `yaml:"brs"`
+		FilterID    uint32 `yaml:"filter_id"`
+		FilterMask  uint32 `yaml:"filter_mask"`
+		Protocol    string `yaml:"protocol"` // LEP, JSON, RAW
+		AdapterPath string `yaml:"adapter_path"`
+		RemoteHost  string `yaml:"remote_host"`
+		RemotePort  int    `yaml:"remote_port"`
+	} `yaml:"can"`
+
+	LoRaWAN struct {
+		Server     string `yaml:"server"`
+		APIKey     string `yaml:"api_key"` // literal or secret reference
+		NetworkID  string `yaml:"network_id"`
+		DeviceEUI  string `yaml:"device_eui"`
+		Port       uint8  `yaml:"port"`
+		Protocol   string `yaml:"protocol"` // MQTT, HTTP, GRPC
+		TLSEnabled bool   `yaml:"tls_enabled"`
+		MaxRetries int    `yaml:"max_retries"`
+	} `yaml:"lorawan"`
 
 	Adapter struct {
 		Command string   `yaml:"command"`

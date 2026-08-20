@@ -22,11 +22,9 @@ type Report struct {
 	Architecture     uint8               `json:"architecture"`
 	ArchitectureName string              `json:"architecture_name,omitempty"`
 	CPU              *CPU                `json:"cpu,omitempty"`
+	CPU64            *CPU64              `json:"cpu64,omitempty"`
 	Fault            *Fault              `json:"fault,omitempty"`
 	Frames           []symbolicate.Frame `json:"frames,omitempty"`
-	Tasks            []Task              `json:"tasks,omitempty"`
-	CurrentTask      string              `json:"current_task,omitempty"`
-	RTOS             string              `json:"rtos,omitempty"`
 	Confidence       float64             `json:"confidence,omitempty"`
 	MemoryClass      string              `json:"memory_class,omitempty"`
 	Warnings         []string            `json:"warnings,omitempty"`
@@ -38,6 +36,20 @@ type CPU struct {
 	LR           uint32 `json:"lr"`
 	PC           uint32 `json:"pc"`
 	SP           uint32 `json:"sp,omitempty"`
+}
+
+// CPU64 decodes a LEP TLV 16 CPU64 capability descriptor (Latch riscv64).
+type CPU64 struct {
+	Encoding     uint8    `json:"encoding"`
+	Flags        uint8    `json:"flags"`
+	Architecture uint8    `json:"architecture"`
+	WordSize     uint8    `json:"word_size"`
+	Complete     bool     `json:"complete"`
+	X            []uint64 `json:"x,omitempty"`
+	MSTATUS      uint64   `json:"mstatus,omitempty"`
+	MCAUSE       uint64   `json:"mcause,omitempty"`
+	MTVAL        uint64   `json:"mtval,omitempty"`
+	MEPC         uint64   `json:"mepc,omitempty"`
 }
 
 type Fault struct {
@@ -114,18 +126,16 @@ func AnalyzeWithOptions(raw []byte, opts AnalyzeOptions) (Report, error) {
 				report.Warnings = append(report.Warnings, warn)
 			}
 			report.Fault = fault
-		case TLVRTOSTasks:
-			tasks, rtos, warns := ParseRTOSTasks(field.Value)
-			report.Tasks = tasks
-			report.RTOS = rtos
-			report.Warnings = append(report.Warnings, warns...)
-		case TLVRTOSCurrent:
-			name, warns := ParseRTOSCurrent(field.Value)
-			report.CurrentTask = name
-			report.Warnings = append(report.Warnings, warns...)
-			for i := range report.Tasks {
-				if report.Tasks[i].Name == name {
-					report.Tasks[i].Current = true
+		case 16: // LS_TLV_CPU64
+			if cpu64, warn := decodeCPU64(field.Value); cpu64 != nil {
+				report.CPU64 = cpu64
+				if cpu64.Architecture != 0 {
+					arch = cpu64.Architecture
+					report.Architecture = cpu64.Architecture
+					report.ArchitectureName = ArchitectureName(arch)
+				}
+				if warn != "" {
+					report.Warnings = append(report.Warnings, warn)
 				}
 			}
 		}
@@ -170,13 +180,6 @@ func decodeCPU(value []byte, arch uint8) (*CPU, string) {
 			cpu.SP = binary.LittleEndian.Uint32(value[16:20])
 			return cpu, ""
 		}
-	case ArchAVR, ArchPIC:
-		// Short experimental layouts (not Latch multi-arch container).
-		if len(value) >= 12 {
-			cpu.PC = binary.LittleEndian.Uint32(value[4:8])
-			cpu.LR = binary.LittleEndian.Uint32(value[8:12])
-			return cpu, ""
-		}
 	}
 	// Default Latch multi-arch CPU TLV (Cortex-M / RISC-V / Xtensa / Linux).
 	if len(value) >= 138 {
@@ -193,6 +196,52 @@ func decodeCPU(value []byte, arch uint8) (*CPU, string) {
 		return cpu, fmt.Sprintf("CPU context used short layout (%d bytes)", len(value))
 	}
 	return nil, fmt.Sprintf("CPU context TLV is truncated (%d bytes)", len(value))
+}
+
+func decodeCPU64(value []byte) (*CPU64, string) {
+	const (
+		flagComplete  = 0x01
+		flagUnavail   = 0x02
+		registerCount = 32
+		csrCount      = 4
+		fullLength    = 4 + (registerCount+csrCount)*8
+	)
+	if len(value) < 4 {
+		return nil, fmt.Sprintf("CPU64 TLV is truncated (%d bytes)", len(value))
+	}
+	cpu64 := &CPU64{
+		Encoding:     value[0],
+		Flags:        value[1],
+		Architecture: value[2],
+		WordSize:     value[3],
+	}
+	switch cpu64.Flags {
+	case flagComplete:
+		cpu64.Complete = true
+	case flagUnavail:
+		cpu64.Complete = false
+	default:
+		return cpu64, fmt.Sprintf("CPU64 flags 0x%02x unrecognized", cpu64.Flags)
+	}
+	if !cpu64.Complete {
+		return cpu64, ""
+	}
+	if len(value) < fullLength {
+		return cpu64, fmt.Sprintf("CPU64 complete value truncated (%d bytes, want %d)", len(value), fullLength)
+	}
+	if cpu64.WordSize != 8 {
+		return cpu64, fmt.Sprintf("CPU64 word size %d unsupported", cpu64.WordSize)
+	}
+	cpu64.X = make([]uint64, registerCount)
+	for i := 0; i < registerCount; i++ {
+		cpu64.X[i] = binary.LittleEndian.Uint64(value[4+i*8 : 12+i*8])
+	}
+	csr := value[4+registerCount*8:]
+	cpu64.MSTATUS = binary.LittleEndian.Uint64(csr[0:8])
+	cpu64.MCAUSE = binary.LittleEndian.Uint64(csr[8:16])
+	cpu64.MTVAL = binary.LittleEndian.Uint64(csr[16:24])
+	cpu64.MEPC = binary.LittleEndian.Uint64(csr[24:32])
+	return cpu64, ""
 }
 
 func decodeFault(value []byte, arch uint8) (*Fault, string) {
@@ -337,14 +386,12 @@ func (report Report) Text() string {
 			fmt.Fprintf(&b, "BFAR: 0x%08x\n", report.Fault.BFAR)
 		}
 	}
-	if report.RTOS != "" {
-		fmt.Fprintf(&b, "\nRTOS: %s\n", report.RTOS)
-	}
-	if report.CurrentTask != "" {
-		fmt.Fprintf(&b, "Current task: %s\n", report.CurrentTask)
-	}
-	for _, task := range report.Tasks {
-		fmt.Fprintf(&b, "  task %s state=%s prio=%d stack_hw=0x%x\n", task.Name, task.State, task.Priority, task.StackHigh)
+	if report.CPU64 != nil {
+		fmt.Fprintf(&b, "CPU64: complete=%t word_size=%d\n", report.CPU64.Complete, report.CPU64.WordSize)
+		if report.CPU64.Complete && report.CPU64.MEPC != 0 {
+			fmt.Fprintf(&b, "CPU64 PC (mepc): 0x%016x\nCPU64 MCAUSE: 0x%016x\nCPU64 MTVAL: 0x%016x\n",
+				report.CPU64.MEPC, report.CPU64.MCAUSE, report.CPU64.MTVAL)
+		}
 	}
 	if len(report.Frames) > 0 {
 		b.WriteString("\nSymbolication\n")

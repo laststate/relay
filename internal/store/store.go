@@ -572,11 +572,14 @@ func (store *Store) ensureCapacity(ctx context.Context, incoming int64) error {
 	return fmt.Errorf("%w: used=%d incoming=%d limit=%d free=%d minimum_free=%d", ErrSpoolFull, used, incoming, store.options.MaxSpoolBytes, free, store.options.MinFreeBytes)
 }
 
-func (store *Store) List(ctx context.Context, limit int) ([]Event, error) {
+func (store *Store) List(ctx context.Context, limit, offset int) ([]Event, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
-	rows, err := store.db.QueryContext(ctx, `SELECT id,payload_hash,raw_object_path,protocol_version,event_type,architecture,flags,sequence,source_event_id,source_id,received_at,state,size_bytes,duplicate_count FROM events ORDER BY received_at DESC LIMIT ?`, limit)
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := store.db.QueryContext(ctx, `SELECT id,payload_hash,raw_object_path,protocol_version,event_type,architecture,flags,sequence,source_event_id,source_id,received_at,state,size_bytes,duplicate_count FROM events ORDER BY received_at DESC LIMIT ? OFFSET ?`, limit, offset)
 	if err != nil {
 		return nil, err
 	}

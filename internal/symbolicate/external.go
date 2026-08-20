@@ -115,19 +115,42 @@ func splitFileLine(value string) (string, int) {
 
 func splitFileLineCol(value string) (string, int, int) {
 	parts := strings.Split(value, ":")
-	if len(parts) < 2 {
+	if len(parts) == 1 {
 		return value, 0, 0
 	}
-	line, _ := strconv.Atoi(parts[len(parts)-2])
 	col := 0
-	if len(parts) >= 3 {
-		// file:line:col — last may be col
-		if c, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
-			col = c
-			line, _ = strconv.Atoi(parts[len(parts)-2])
-			return strings.Join(parts[:len(parts)-2], ":"), line, col
-		}
+	line := 0
+	last := parts[len(parts)-1]
+
+	lastIsNum := false
+	if _, err := strconv.Atoi(last); err == nil {
+		lastIsNum = true
 	}
-	line, _ = strconv.Atoi(parts[len(parts)-1])
-	return strings.Join(parts[:len(parts)-1], ":"), line, 0
+
+	if lastIsNum && len(parts) >= 3 {
+		// Check if second-to-last is also numeric for "file:line:col".
+		if _, err := strconv.Atoi(parts[len(parts)-2]); err == nil {
+			col, line = 0, 0 // Reset — handled below
+		}
+		// Treat last as col, second-to-last as line.
+		if c, err := strconv.Atoi(last); err == nil {
+			col = c
+		}
+		if l, err := strconv.Atoi(parts[len(parts)-2]); err == nil {
+			line = l
+		}
+		// File is everything before last two parts.
+		return strings.Join(parts[:len(parts)-2], ":"), line, col
+	}
+
+	if lastIsNum {
+		// Only 2 parts: "file:line" — last is line.
+		if l, err := strconv.Atoi(last); err == nil {
+			line = l
+		}
+		return strings.Join(parts[:len(parts)-1], ":"), line, col
+	}
+
+	// Non-numeric last part: treat everything as file.
+	return strings.Join(parts[:len(parts)-1], ":"), 0, 0
 }
