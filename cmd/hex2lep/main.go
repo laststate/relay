@@ -17,7 +17,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "decode:", err)
 		os.Exit(1)
 	}
-	if err := os.WriteFile(os.Args[2], b, 0o644); err != nil {
+	if err := os.WriteFile(os.Args[2], b, 0o600); err != nil {
 		fmt.Fprintln(os.Stderr, "write:", err)
 		os.Exit(1)
 	}

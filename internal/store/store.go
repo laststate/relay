@@ -18,8 +18,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/laststate/relay/internal/lep"
 	_ "modernc.org/sqlite"
+
+	"github.com/laststate/relay/internal/lep"
 )
 
 var (
@@ -282,7 +283,7 @@ func (store *Store) migrate(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer transaction.Rollback()
+	defer func() { _ = transaction.Rollback() }()
 	for _, statement := range schema {
 		if _, err := transaction.ExecContext(ctx, statement); err != nil {
 			return err
@@ -373,7 +374,7 @@ func (store *Store) ConfigureInstance(ctx context.Context, requestedID, name, ve
 	if err != nil {
 		return "", err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var currentID, firstVersion string
 	if err := tx.QueryRowContext(ctx, `SELECT id,first_version FROM relay_instance LIMIT 1`).Scan(&currentID, &firstVersion); err != nil {
 		return "", err
@@ -412,7 +413,7 @@ func (store *Store) ConfigureSources(ctx context.Context, sources map[string]str
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, `UPDATE sources SET enabled=0`); err != nil {
 		return err
 	}
@@ -435,7 +436,7 @@ func (store *Store) ConfigureDestinations(ctx context.Context, destinations []De
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	// Removed destinations are disabled before the current configuration is
 	// applied. This prevents accidental delivery to an endpoint removed from YAML.
 	if _, err := tx.ExecContext(ctx, `UPDATE destinations SET enabled=0,state='DISABLED'`); err != nil {
@@ -525,7 +526,7 @@ func (store *Store) Put(ctx context.Context, sourceID string, raw []byte, envelo
 	if err != nil {
 		return Result{}, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	now := event.ReceivedAt.Format(time.RFC3339Nano)
 	_, err = tx.ExecContext(ctx, `INSERT INTO events(id,payload_hash,raw_object_path,protocol_version,event_type,architecture,flags,sequence,source_event_id,source_id,received_at,state,size_bytes,last_seen_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, event.ID, event.PayloadHash, event.RawObjectPath, event.Envelope.Version, event.Envelope.Type, event.Envelope.Architecture, event.Envelope.Flags, event.Envelope.Sequence, event.Envelope.EventID, event.SourceID, now, event.State, event.Size, now)
 	if err != nil {
@@ -610,7 +611,7 @@ func (store *Store) ClaimPendingDeliveries(ctx context.Context, limit int, lease
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	now := time.Now().UTC()
 	if _, err := tx.ExecContext(ctx, `UPDATE event_destinations SET state='RETRY',lease_token=NULL,lease_until=NULL,next_attempt_at=? WHERE state='DELIVERING' AND lease_until<=?`, now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano)); err != nil {
 		return nil, err
@@ -688,7 +689,7 @@ func (store *Store) RecordDelivery(ctx context.Context, delivery PendingDelivery
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	if _, err = tx.ExecContext(ctx, `INSERT INTO delivery_attempts(event_id,destination_id,attempted_at,status_code,error) VALUES(?,?,?,?,?)`, delivery.EventID, delivery.DestinationID, now, statusCode, failure); err != nil {
 		return err
@@ -973,7 +974,7 @@ func (store *Store) Prune(ctx context.Context, before time.Time, force bool) (Pr
 	if err != nil {
 		return PruneResult{}, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	result := PruneResult{}
 	for _, c := range candidates {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM events WHERE id=?`, c.id); err != nil {

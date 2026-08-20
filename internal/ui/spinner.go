@@ -6,7 +6,6 @@ package ui
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"time"
 
@@ -127,8 +126,3 @@ func SpinnerWithTimeout(ctx context.Context, action string, d time.Duration, fn 
 	defer cancel()
 	return SpinnerContext(cctx, action, fn)
 }
-
-// writeSpinnerTo is a small testing hook that lets tests force the spinner
-// to write to a buffer. The exported form takes an io.Writer so the rest of
-// the package can stay in charge of its own rendering.
-func writeSpinnerTo(w io.Writer, _ string) { _, _ = fmt.Fprintln(w, "spinner") }

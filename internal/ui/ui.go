@@ -34,10 +34,6 @@ func colorEnabled() bool {
 	return term.IsTerminal(fd)
 }
 
-// setColorEnabled forces the color decision. Used by tests and by the
-// --no-color flag plumbing.
-func setColorEnabled(enabled bool) { ForceColor.Store(&enabled) }
-
 // IsTTY reports whether stdout is attached to a terminal. Callers use it to
 // pick between the live TUI dashboard and the line-based fallback logger.
 func IsTTY() bool { return term.IsTerminal(int(os.Stdout.Fd())) }

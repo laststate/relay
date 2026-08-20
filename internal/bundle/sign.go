@@ -48,7 +48,7 @@ func CanonicalManifestJSON(manifest Manifest) ([]byte, error) {
 	artifacts := append([]ManifestArtifact(nil), manifest.Artifacts...)
 	sort.Slice(artifacts, func(i, j int) bool { return artifacts[i].SHA256 < artifacts[j].SHA256 })
 	for _, item := range artifacts {
-		payload.Artifacts = append(payload.Artifacts, canonArtifact{SHA256: item.SHA256, Path: item.Path, Size: item.Size})
+		payload.Artifacts = append(payload.Artifacts, canonArtifact(item))
 	}
 	return json.Marshal(payload)
 }

@@ -232,15 +232,18 @@ func decodeCPU64(value []byte) (*CPU64, string) {
 	if cpu64.WordSize != 8 {
 		return cpu64, fmt.Sprintf("CPU64 word size %d unsupported", cpu64.WordSize)
 	}
+	// Registers followed by four CSRs (mstatus, mcause, mtval, mepc), each 8
+	// bytes. fullLength (292) was validated above so these bounds are safe.
+	regs := value[4 : 4+registerCount*8]
+	csr := value[4+registerCount*8 : fullLength] //nolint:gosec // bounds validated by len(value) < fullLength above
 	cpu64.X = make([]uint64, registerCount)
 	for i := 0; i < registerCount; i++ {
-		cpu64.X[i] = binary.LittleEndian.Uint64(value[4+i*8 : 12+i*8])
+		cpu64.X[i] = binary.LittleEndian.Uint64(regs[i*8 : (i+1)*8]) //nolint:gosec // regs is exactly registerCount*8 bytes
 	}
-	csr := value[4+registerCount*8:]
-	cpu64.MSTATUS = binary.LittleEndian.Uint64(csr[0:8])
-	cpu64.MCAUSE = binary.LittleEndian.Uint64(csr[8:16])
-	cpu64.MTVAL = binary.LittleEndian.Uint64(csr[16:24])
-	cpu64.MEPC = binary.LittleEndian.Uint64(csr[24:32])
+	cpu64.MSTATUS = binary.LittleEndian.Uint64(csr[0:8]) //nolint:gosec // csr is a fixed 32-byte slice (validated length)
+	cpu64.MCAUSE = binary.LittleEndian.Uint64(csr[8:16]) //nolint:gosec // csr is a fixed 32-byte slice (validated length)
+	cpu64.MTVAL = binary.LittleEndian.Uint64(csr[16:24]) //nolint:gosec // csr is a fixed 32-byte slice (validated length)
+	cpu64.MEPC = binary.LittleEndian.Uint64(csr[24:32])  //nolint:gosec // csr is a fixed 32-byte slice (validated length)
 	return cpu64, ""
 }
 

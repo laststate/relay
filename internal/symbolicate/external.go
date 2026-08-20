@@ -49,7 +49,7 @@ func ResolveExternal(cfg ExternalConfig, artifactPath string, addresses []uint64
 			args = append(args, fmt.Sprintf("0x%x", address))
 		}
 	}
-	cmd := exec.CommandContext(ctx, cfg.Binary, args...)
+	cmd := exec.CommandContext(ctx, cfg.Binary, args...) //nolint:gosec // binary path from operator config, addresses hex-encoded
 	cmd.Dir = filepath.Dir(abs)
 	cmd.Env = []string{"PATH=", "LANG=C"}
 	var stdout, stderr bytes.Buffer

@@ -139,13 +139,3 @@ func Styles() *styles {
 	sharedStyles.Store(s)
 	return s
 }
-
-// withColor wraps a renderer so that it is only applied when color output is
-// enabled. This is the building block that lets the rest of the package
-// gracefully degrade to plain text in CI.
-func withColor(enabled func() bool, render func() string) string {
-	if !enabled() {
-		return stripAnsi(render())
-	}
-	return render()
-}

@@ -8,13 +8,12 @@ linters:
     - errcheck
     - gofmt
     - goimports
+    - gosec
     - gosimple
     - govet
     - ineffassign
     - staticcheck
     - unused
-  disable:
-    - gosec
   fast: false
   settings:
     gofmt:
@@ -29,7 +28,6 @@ linters-settings:
     local-prefixes: github.com/laststate/relay
   govet:
     enable:
-      - shadow
       - nilness
   unused:
     check-exported: false
@@ -41,7 +39,22 @@ issues:
     - path: _test\.go
       linters:
         - errcheck
-        - govet
+        - gosec
+    # Conversions of len() to fixed-width fields are bounded by validated
+    # payload limits (MaxFrameBytes, MaxBodyBytes); no overflow is reachable.
+    - linters:
+        - gosec
+      text: "G115:"
+    # math/rand powers delivery backoff jitter only; it is not used for
+    # secrets or nonces.
+    - linters:
+        - gosec
+      text: "G404:"
+    # leaseWhere is a constant fragment controlled by this package, never
+    # derived from input.
+    - linters:
+        - gosec
+      text: "G202:"
   exclude-dirs:
     - vendor
     - migrations

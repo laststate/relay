@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
+
 	"github.com/laststate/relay/internal/store"
 	"github.com/laststate/relay/internal/traceapi"
 )

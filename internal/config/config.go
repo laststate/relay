@@ -102,9 +102,9 @@ type Source struct {
 		TLS      TLS      `yaml:"tls"`
 	} `yaml:"mqtt"`
 
-	// Experimental transports. These collectors are not yet recommended for
-	// production and are wired to best-effort stubs that may require platform
-	// support (BlueZ, SocketCAN, LoRaWAN network servers).
+	// Experimental transports. These collectors talk to platform backends
+	// (a JSON-over-TCP BLE gateway, native SocketCAN on Linux, LoRaWAN network
+	// servers over MQTT/HTTP) and are not yet recommended for production.
 	BLE struct {
 		Adapter         string        `yaml:"adapter"`
 		ScanDuration    time.Duration `yaml:"scan_duration"`
@@ -471,17 +471,11 @@ func (cfg *Config) defaults() {
 		if s.HTTP.MaxConcurrent <= 0 {
 			s.HTTP.MaxConcurrent = 32
 		}
-		if s.MQTT.QoS == 0 && s.Type == "mqtt" {
-			// leave 0 as valid at-most-once; default to 1 when unset via negative sentinel not used
-		}
-		if s.Type == "mqtt" && s.MQTT.QoS == 0 && s.MQTT.ClientID == "" {
-			// QoS 0 is intentional; only default client id
+		if s.MQTT.QoS < 0 {
+			s.MQTT.QoS = 1
 		}
 		if s.Type == "mqtt" && s.MQTT.ClientID == "" {
 			s.MQTT.ClientID = "laststate-relay"
-		}
-		if s.Type == "mqtt" && s.MQTT.QoS < 0 {
-			s.MQTT.QoS = 1
 		}
 	}
 	for i := range cfg.Destinations {

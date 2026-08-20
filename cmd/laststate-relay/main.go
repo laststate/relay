@@ -1023,7 +1023,7 @@ func destinationHTTPClient(destination config.Destination) (*http.Client, error)
 	transport.IdleConnTimeout = 90 * time.Second
 	transport.ResponseHeaderTimeout = 20 * time.Second
 	transport.TLSHandshakeTimeout = 10 * time.Second
-	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: destination.TLS.InsecureSkipVerify, ServerName: destination.TLS.ServerName} //nolint:gosec -- explicit lab-only setting
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: destination.TLS.InsecureSkipVerify, ServerName: destination.TLS.ServerName} //nolint:gosec // explicit lab-only setting
 	if destination.TLS.CAFile != "" {
 		data, err := os.ReadFile(destination.TLS.CAFile)
 		if err != nil {
@@ -1253,10 +1253,11 @@ func adapterSource(ctx context.Context, service ingest.Service, src config.Sourc
 	return err
 }
 
-// Experimental collectors. The BLE, CAN, and LoRaWAN transports are stubs that
-// depend on platform support (BlueZ, SocketCAN, LoRaWAN network servers) and
-// are not yet recommended for production. They follow the same ingest contract
-// as the other sources: every collected payload is framed as raw LEP by default.
+// Experimental collectors. The BLE, CAN, and LoRaWAN transports talk to
+// platform backends (a JSON-over-TCP BLE gateway, native SocketCAN on Linux,
+// LoRaWAN network servers over MQTT/HTTP) and are not yet recommended for
+// production. They follow the same ingest contract as the other sources:
+// every collected payload is framed as raw LEP by default.
 func bleSource(ctx context.Context, service ingest.Service, src config.Source, publish func(ui.DashboardMsg)) error {
 	scanner := mqttsource.NewBLEScanner(mqttsource.BLEConfig{
 		Adapter:         src.BLE.Adapter,
@@ -1322,7 +1323,7 @@ func lorawanSource(ctx context.Context, service ingest.Service, src config.Sourc
 }
 
 func clientTLSConfig(cfg config.TLS) (*tls.Config, error) {
-	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: cfg.InsecureSkipVerify, ServerName: cfg.ServerName}
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: cfg.InsecureSkipVerify, ServerName: cfg.ServerName} //nolint:gosec // lab-only setting controlled by operator config
 	if cfg.CAFile != "" {
 		pem, err := os.ReadFile(cfg.CAFile)
 		if err != nil {
@@ -2067,7 +2068,12 @@ func extractZipArchive(input, dest string) error {
 			rc.Close()
 			return err
 		}
-		_, copyErr := io.Copy(out, rc)
+		// Bound extraction against the declared size to defeat zip bombs.
+		limit := int64(16 << 20)
+		if file.UncompressedSize64 > 0 && file.UncompressedSize64 < uint64(limit) {
+			limit = int64(file.UncompressedSize64) + 1
+		}
+		_, copyErr := io.Copy(out, io.LimitReader(rc, limit))
 		out.Close()
 		rc.Close()
 		if copyErr != nil {

@@ -40,7 +40,7 @@ func (s *Subprocess) Start(ctx context.Context) error {
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
-	s.cmd = exec.CommandContext(runCtx, s.Command, s.Args...)
+	s.cmd = exec.CommandContext(runCtx, s.Command, s.Args...) //nolint:gosec // command from operator config, not input
 	if len(s.Env) > 0 {
 		s.cmd.Env = append(os.Environ(), s.Env...)
 	}

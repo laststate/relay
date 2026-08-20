@@ -8,6 +8,16 @@
       "expect": "valid"
     },
     {
+      "id": "valid-latch-platform-contexts",
+      "path": "valid/latch-platform-contexts.hex",
+      "expect": "valid"
+    },
+    {
+      "id": "valid-latch-cpu64-complete",
+      "path": "valid/latch-cpu64-complete.hex",
+      "expect": "valid"
+    },
+    {
       "id": "invalid-magic",
       "path": "invalid/bad-magic.hex",
       "expect": "invalid"

@@ -48,12 +48,5 @@ func ShortBanner() string {
 	return s.AppName.Render("LAST STATE") + " " + relay.Render("RELAY") + " " + s.AppTag.Render("· offline-first LEP gateway")
 }
 
-func Section(title string) string             { return Styles().Section.Render(title) }
-func Help(usage string) string                { return Styles().Muted.Render(usage) }
-func renderWithColor(fn func() string) string { return fn() }
-func compact(value string, width, height int) string {
-	if !colorEnabled() {
-		return value
-	}
-	return lipgloss.NewStyle().Width(width).Height(height).Render(value)
-}
+func Section(title string) string { return Styles().Section.Render(title) }
+func Help(usage string) string    { return Styles().Muted.Render(usage) }

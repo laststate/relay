@@ -112,7 +112,22 @@ func RunCAN(ctx context.Context, cfg CANConfig, handle CANHandler) error {
 			continue
 		}
 
-		// Parse CAN frames from the raw data
+		// Native SocketCAN sockets deliver one raw kernel frame per read;
+		// TCP/unix bridges stream a concatenated LEP or raw framing stream.
+		if _, ok := conn.(*canSocket); ok {
+			frame := decodeCANFrameLinux(buf[:n])
+			if cfg.FilterID != 0 && cfg.FilterMask != 0 {
+				if frame.ID&cfg.FilterMask != cfg.FilterID {
+					continue
+				}
+			}
+			payload := encodeCANFrame(frame, cfg.Protocol)
+			if err := handle(frame, payload); err != nil {
+				log.Warn("CAN handler error", "error", err)
+			}
+			continue
+		}
+
 		frames := parseCANFrames(buf[:n], cfg)
 		for _, frame := range frames {
 			payload := encodeCANFrame(frame, cfg.Protocol)
@@ -123,7 +138,9 @@ func RunCAN(ctx context.Context, cfg CANConfig, handle CANHandler) error {
 	}
 }
 
-// connectCANSource establishes a connection to the CAN source.
+// connectCANSource establishes a connection to the CAN source. SocketCAN
+// support (native AF_CAN sockets) lives in can_linux.go and is only compiled
+// on Linux; other platforms fall back to remote TCP adapters.
 func connectCANSource(ctx context.Context, cfg CANConfig) (net.Conn, error) {
 	if cfg.RemoteHost != "" {
 		// Remote CAN-over-TCP adapter
@@ -132,12 +149,12 @@ func connectCANSource(ctx context.Context, cfg CANConfig) (net.Conn, error) {
 		if err != nil {
 			return nil, fmt.Errorf("remote CAN connect: %w", err)
 		}
-		conn.SetDeadline(time.Now().Add(30 * time.Second))
+		_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
 		return conn, nil
 	}
 
 	if cfg.AdapterPath != "" {
-		// USB-CAN adapter via serial
+		// USB-CAN adapter via serial (classic PTY / TCP socket)
 		conn, err := net.DialTimeout("unix", cfg.AdapterPath, 10*time.Second)
 		if err != nil {
 			return nil, fmt.Errorf("USB-CAN adapter: %w", err)
@@ -145,13 +162,10 @@ func connectCANSource(ctx context.Context, cfg CANConfig) (net.Conn, error) {
 		return conn, nil
 	}
 
-	// Local socketcan interface
 	if cfg.Interface != "" {
-		conn, err := net.DialTimeout("unixgram", "/dev/"+cfg.Interface, 5*time.Second)
-		if err != nil {
-			return nil, fmt.Errorf("socketcan %s: %w", cfg.Interface, err)
-		}
-		return conn, nil
+		// Local SocketCAN interface. Native AF_CAN sockets are implemented in
+		// can_linux.go; other platforms attempt a best-effort unixgram link.
+		return dialSocketCAN(ctx, cfg.Interface)
 	}
 
 	return nil, fmt.Errorf("no CAN source configured")
@@ -162,26 +176,23 @@ func parseCANFrames(data []byte, cfg CANConfig) []CANFrame {
 	var frames []CANFrame
 
 	if cfg.Protocol == "LEP" {
-		// LEP-encoded CAN frames have a header + payload structure
-		for len(data) >= 8 {
-			if len(data) < 8+int(data[5]) {
+		// LEP-encoded CAN frames: [id:4][flags:1][len:1][data:N]
+		for len(data) >= 6 {
+			if int(data[5]) > 64 || len(data) < 6+int(data[5]) {
 				break
 			}
 			frame := CANFrame{
 				ID:        binary.LittleEndian.Uint32(data[:4]),
-				DLC:       data[4],
+				DLC:       data[4] & 0x0F,
 				Data:      make([]byte, data[5]),
 				IsFD:      data[4]&0x80 != 0,
 				BRS:       data[4]&0x40 != 0,
 				IDE:       data[4]&0x20 != 0,
 				Timestamp: time.Now(),
 			}
-			if data[4] > 64 {
-				break // malformed frame
-			}
-			copy(frame.Data, data[8:8+int(data[5])])
+			copy(frame.Data, data[6:6+int(data[5])])
 			frames = append(frames, frame)
-			data = data[8+int(data[5]):]
+			data = data[6+int(data[5]):]
 		}
 	} else {
 		// Raw CAN frames: 8-byte standard format [ID(4)][DLC(1)][Data(DLC)]
@@ -218,10 +229,21 @@ func parseCANFrames(data []byte, cfg CANConfig) []CANFrame {
 func encodeCANFrame(frame CANFrame, protocol string) []byte {
 	switch protocol {
 	case "LEP":
-		// LEP CAN frame: [id:4][dlc:1][data_length:1][data:N]
+		// LEP CAN frame: [id:4][flags:1][len:1][data:N]
+		// flags: DLC in low nibble, FD=0x80, BRS=0x40, IDE=0x20.
 		buf := make([]byte, 6+len(frame.Data))
 		binary.LittleEndian.PutUint32(buf[:4], frame.ID)
-		buf[4] = frame.DLC
+		flags := frame.DLC & 0x0F
+		if frame.IsFD {
+			flags |= 0x80
+		}
+		if frame.BRS {
+			flags |= 0x40
+		}
+		if frame.IDE {
+			flags |= 0x20
+		}
+		buf[4] = flags
 		buf[5] = byte(len(frame.Data))
 		copy(buf[6:], frame.Data)
 		return buf
@@ -254,6 +276,43 @@ func marshalCANFrameJSON(frame CANFrame) []byte {
 	buf = append(buf, '"')
 	buf = append(buf, '}')
 	return buf
+}
+
+// decodeCANFrameLinux decodes a raw CAN/CANFD frame received from an AF_CAN
+// socket. Classic CAN frames are 16 bytes (struct can_frame) and CAN FD
+// frames are 72 bytes (struct canfd_frame). The kernel layout is identical
+// on every platform that produces SocketCAN frames, so this is shared code.
+func decodeCANFrameLinux(buf []byte) CANFrame {
+	if len(buf) < 16 {
+		return CANFrame{Timestamp: time.Now()}
+	}
+	id := binary.LittleEndian.Uint32(buf[:4])
+	isFD := len(buf) >= 72
+	dlc := buf[4] & 0x0F
+	// Classic can_frame: flags (IDE/RTR) live in the high bits of byte 4.
+	// CAN FD canfd_frame: flags live in byte 5 (FD=0x01, BRS=0x02, ESI=0x04).
+	flags := buf[4]
+	if isFD {
+		flags = buf[5]
+	}
+	frame := CANFrame{
+		ID:        id,
+		DLC:       dlc,
+		IsFD:      isFD,
+		BRS:       flags&0x02 != 0,
+		IDE:       flags&0x04 != 0,
+		Timestamp: time.Now(),
+	}
+	n := 8
+	if isFD {
+		n = 64
+	}
+	if int(dlc) > n {
+		dlc = uint8(n)
+	}
+	frame.Data = make([]byte, dlc)
+	copy(frame.Data, buf[8:8+int(dlc)])
+	return frame
 }
 
 // CANDevice represents a physical CAN device for HIL testing.
@@ -299,7 +358,9 @@ func (d *CANDevice) Name() string {
 	return d.Interface
 }
 
-// SanitizeCANInterface returns a clean interface name.
+// SanitizeCANInterface returns a clean interface index suffix. Both "can0"
+// and "vcan1" yield the numeric tail ("0", "1") used for addressing.
 func SanitizeCANInterface(name string) string {
+	name = strings.TrimPrefix(name, "vcan")
 	return strings.TrimPrefix(name, "can")
 }
