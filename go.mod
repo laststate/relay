@@ -7,7 +7,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/eclipse/paho.mqtt.golang v1.5.1
-	github.com/klauspost/compress v1.19.0
+	github.com/klauspost/compress v1.19.2
 	go.bug.st/serial v1.6.4
 	go.opentelemetry.io/otel v1.45.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.45.0
