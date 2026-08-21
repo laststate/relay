@@ -90,13 +90,13 @@ func dialSocketCAN(ctx context.Context, iface string) (net.Conn, error) {
 		return nil, fmt.Errorf("socketcan %s: socket: %w", iface, err)
 	}
 	if err := unix.SetsockoptInt(sock, unix.SOL_SOCKET, unix.SO_RCVTIMEO_OLD, int(5*time.Second/time.Millisecond)); err != nil {
-		unix.Close(sock)
+		_ = unix.Close(sock)
 		return nil, fmt.Errorf("socketcan %s: setsockopt: %w", iface, err)
 	}
 
 	addr := &unix.SockaddrCAN{Ifindex: idx}
 	if err := unix.Bind(sock, addr); err != nil {
-		unix.Close(sock)
+		_ = unix.Close(sock)
 		return nil, fmt.Errorf("socketcan %s: bind: %w", iface, err)
 	}
 
