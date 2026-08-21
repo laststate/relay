@@ -672,7 +672,7 @@ func Validate(cfg Config) error {
 				return fmt.Errorf("crypto.keys[%d].key: must not be empty", i)
 			}
 			if strings.HasPrefix(key.Key, "keyring:") {
-				return fmt.Errorf("crypto.keys[%d].key: keyring: references are not supported in this build; use env: or file:", i)
+				return fmt.Errorf("crypto.keys[%d].key: keyring references are not supported in this build; use env or file references", i)
 			}
 			ids[key.ID] = true
 		}

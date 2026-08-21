@@ -121,7 +121,7 @@ func functionAt(data *dwarf.Data, address uint64) (string, bool) {
 	reader := data.Reader()
 	var bestName string
 	var bestInline bool
-	var bestSize uint64 = ^uint64(0)
+	var bestSize = ^uint64(0)
 	for {
 		entry, err := reader.Next()
 		if err != nil || entry == nil {

@@ -50,10 +50,7 @@ func (decoder *Decoder) Push(data []byte) (frames [][]byte, err error) {
 		decoder.buffer = append(decoder.buffer, data...)
 	}
 	var problems DecodeErrors
-	for {
-		if len(decoder.buffer) < HeaderSize {
-			break
-		}
+	for len(decoder.buffer) >= HeaderSize {
 		if decoder.buffer[0] != 'L' || decoder.buffer[1] != 'S' {
 			decoder.buffer = decoder.buffer[1:]
 			continue
@@ -65,7 +62,7 @@ func (decoder *Decoder) Push(data []byte) (frames [][]byte, err error) {
 		}
 		length := int(binary.LittleEndian.Uint32(decoder.buffer[4:8]))
 		if length <= 0 || length > decoder.max {
-			problems = append(problems, fmt.Errorf("Latch stream frame length %d exceeds limit %d", length, decoder.max))
+			problems = append(problems, fmt.Errorf("latch stream frame length %d exceeds limit %d", length, decoder.max))
 			decoder.buffer = decoder.buffer[1:]
 			continue
 		}

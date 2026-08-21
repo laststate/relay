@@ -463,7 +463,7 @@ func (m *model) sourcePanel(sources []SourceState, width int) string {
 		b.WriteString(s.Muted.Render("  (waiting for sources…)"))
 	} else {
 		for _, src := range sources {
-			b.WriteString(fmt.Sprintf("  %s %s %s\n", src.ID, s.Muted.Render("· "+src.Type), stateBadge(src.State)))
+			fmt.Fprintf(&b, "  %s %s %s\n", src.ID, s.Muted.Render("· "+src.Type), stateBadge(src.State))
 		}
 	}
 	return lipgloss.NewStyle().Width(width).Render(b.String())
@@ -478,10 +478,10 @@ func (m *model) destinationPanel(destinations []DestinationState, width int) str
 		b.WriteString(s.Muted.Render("  (no destinations configured)"))
 	} else {
 		for _, dst := range destinations {
-			b.WriteString(fmt.Sprintf("  %s %s\n",
+			fmt.Fprintf(&b, "  %s %s\n",
 				dst.ID,
 				s.Muted.Render(fmt.Sprintf("p=%d d=%d f=%d %s", dst.Pending, dst.Delivered, dst.Failed, stateBadge(dst.State))),
-			))
+			)
 		}
 	}
 	return lipgloss.NewStyle().Width(width).Render(b.String())

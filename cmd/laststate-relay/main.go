@@ -1472,9 +1472,10 @@ func udpSource(ctx context.Context, service ingest.Service, source config.Source
 		}
 		payload := append([]byte(nil), buffer[:count]...)
 		frames := [][]byte{payload}
-		if source.Framing.Type == "cobs" {
+		switch source.Framing.Type {
+		case "cobs":
 			frames, err = framing.NewCOBS(source.Framing.MaxFrameBytes).Push(payload)
-		} else if source.Framing.Type == "latch-stream" {
+		case "latch-stream":
 			frames, err = latchstream.NewDecoder(source.Framing.MaxFrameBytes).Push(payload)
 		}
 		if err != nil {
