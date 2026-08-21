@@ -1318,7 +1318,9 @@ func lorawanSource(ctx context.Context, service ingest.Service, src config.Sourc
 		if err != nil {
 			publish(ui.DashboardMsg{Event: &ui.Event{Time: time.Now(), Kind: ui.EventError, Source: src.ID, Message: "lorawan frame rejected", Detail: err.Error()}})
 		}
-		return nil
+		// Returning the error lets acknowledgement-based transports (gRPC)
+		// signal a NACK to the sender; the MQTT/HTTP pollers only log it.
+		return err
 	})
 }
 

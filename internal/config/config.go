@@ -720,11 +720,11 @@ func validateServerTLS(field string, value TLS) error {
 }
 
 func isLoopbackHost(host string) bool {
-	if strings.EqualFold(host, "localhost") {
+	if strings.EqualFold(host, "localhost") || !strings.Contains(host, ".") || strings.HasSuffix(host, ".local") {
 		return true
 	}
 	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate())
 }
 
 func (source Source) IsEnabled() bool { return source.Enabled == nil || *source.Enabled }

@@ -1,20 +1,21 @@
 # Compatibility matrix
 
-Aligned with **LEP protocol v1.0** (device path = Latch).
+Supports **LEP v1 and v2** (v2 is the current wire version; v1 accepted for
+backward compatibility). Device path = Latch.
 
 ## Protocol
 
 | Component | Version | Where |
 |-----------|---------|--------|
-| LEP | v1.0 | `internal/lep` |
+| LEP | v1 / v2 (v2 current) | `internal/lep` |
 | LEP CRC | CRC-32/IEEE | poly `0x04C11DB7` |
 | Flags | bit3 TRUNCATED, bit4 COMPRESSED | `lep.go` |
-| LEP crypto | v1.0 device path | `lep-crypto.md`, XChaCha+HKDF+HMAC |
+| LEP crypto | v1 / v2 device path | `lep-crypto.md`, XChaCha+HKDF+HMAC |
 | LSAK ACK | v1 | `internal/latchstream` |
 | Latch stream | v1 | [latch-integration.md](latch-integration.md) |
 | COBS | — | `internal/framing` |
 | Architecture codes | v1.0 Latch table | `architecture-codes.md` |
-| TLV registry | v1.0 core 1–15 | `lep-tlv-registry.md` |
+| TLV registry | v1 / v2 core 1–15 | `lep-tlv-registry.md` |
 | Binary batch | v1 | `binary-batch.md` |
 | Attachments | v1 | `attachments.md` |
 | Bundle | v1 + optional Ed25519 | `bundle-format.md` |

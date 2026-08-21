@@ -119,7 +119,7 @@ func (c *LoRaWANClient) Run(ctx context.Context, handle LoRaWANHandler) error {
 	case "HTTP":
 		return c.runHTTP(ctx, handle)
 	case "GRPC":
-		return fmt.Errorf("lorawan: GRPC protocol is not implemented; use MQTT or HTTP")
+		return c.runGRPC(ctx, handle)
 	default:
 		return fmt.Errorf("lorawan: unsupported protocol %q", c.config.Protocol)
 	}

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Last State contributors
 
-// Package lep implements LEP v1 validation, encoding, and crypto.
+// Package lep implements LEP v1/v2 validation, encoding, and crypto.
 package lep
 
 import (
@@ -16,8 +16,9 @@ const (
 	MaxEnvelopeSize = 4 << 20
 	Magic           = "LSTP"
 	Version1        = 1
+	Version2        = 2
 
-	// Flags match Latch / protocol registry (v1 frozen).
+	// Flags match Latch / protocol registry (v1 and v2).
 	FlagAuthenticated uint8 = 1 << 0
 	FlagEncrypted     uint8 = 1 << 1
 	FlagAEAD          uint8 = 1 << 2
@@ -82,7 +83,7 @@ func Validate(data []byte) (Envelope, error) {
 		Sequence: binary.LittleEndian.Uint32(data[8:12]), EventID: binary.LittleEndian.Uint32(data[12:16]),
 		PayloadLength: binary.LittleEndian.Uint32(data[16:20]),
 	}
-	if envelope.Version != Version1 {
+	if envelope.Version != Version1 && envelope.Version != Version2 {
 		return envelope, &ValidationError{Kind: ErrorUnsupported, Field: "version", Reason: fmt.Sprintf("unsupported LEP version %d", envelope.Version)}
 	}
 	if envelope.Flags&^uint8(KnownFlags) != 0 {

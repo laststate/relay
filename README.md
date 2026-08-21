@@ -21,7 +21,7 @@ and idempotency.
 
 ## Features
 
-- LEP v1 validation/encode, CRC-32/IEEE, optional HMAC + ChaCha20-Poly1305, zstd payloads
+- LEP v1/v2 validation/encode (v2 is the current wire version; v1 accepted), CRC-32/IEEE, optional HMAC + ChaCha20-Poly1305, zstd payloads
 - Latch stream and COBS framing with resync
 - Sources: serial, TCP/TLS, UDP, HTTP/TLS, directory, MQTT, subprocess adapters
 - Delivery: mirror / priority / route / local-only, JSON or binary batch, zstd

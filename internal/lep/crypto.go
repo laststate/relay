@@ -16,11 +16,11 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// LEP v1 crypto (device path):
+// LEP v1/v2 crypto (device path):
 //
 //	AEAD meta: nonce[24] || key_id u32 LE
 //	AAD: header[24] || meta[28]
-//	Key: HKDF-SHA256(salt=key_id||seq||event_id, ikm, info="laststate/latch/envelope/v1")
+//	Key: HKDF-SHA256(salt=key_id||seq||event_id, ikm, info="laststate/latch/envelope/v{version}")
 //	HMAC: over header||payload||payload_crc
 
 const (
@@ -31,7 +31,19 @@ const (
 	XChaChaNonceSize = 24
 )
 
-var envelopeHKDFInfo = []byte("laststate/latch/envelope/v1")
+var (
+	envelopeHKDFInfoV1 = []byte("laststate/latch/envelope/v1")
+	envelopeHKDFInfoV2 = []byte("laststate/latch/envelope/v2")
+)
+
+// envelopeHKDFInfo returns the version-bound HKDF info label. Unknown versions
+// fall back to the v2 label so forward decryption is deterministic.
+func envelopeHKDFInfo(version uint8) []byte {
+	if version == Version1 {
+		return envelopeHKDFInfoV1
+	}
+	return envelopeHKDFInfoV2
+}
 
 // Key is a 32-byte IKM with a numeric device key id (Latch u32) and optional 8-byte label.
 type Key struct {
@@ -107,15 +119,6 @@ func ParseKeyID(raw []byte) [KeyIDSize]byte {
 	return id
 }
 
-// KeyIDFromString uses the UTF-8 bytes when ≤8, otherwise the first 8 bytes of SHA-256.
-func KeyIDFromString(s string) [KeyIDSize]byte {
-	if len(s) <= KeyIDSize {
-		return ParseKeyID([]byte(s))
-	}
-	sum := sha256.Sum256([]byte(s))
-	return ParseKeyID(sum[:KeyIDSize])
-}
-
 // NumericIDFromKeyID interprets the first 4 LE bytes as a Latch key_id.
 func NumericIDFromKeyID(id [KeyIDSize]byte) uint32 {
 	return binary.LittleEndian.Uint32(id[:4])
@@ -156,12 +159,12 @@ func hkdfSHA256(salt, ikm, info []byte, length int) ([]byte, error) {
 	return out, nil
 }
 
-func deriveEnvelopeKey(ikm []byte, keyID, sequence, eventID uint32) ([]byte, error) {
+func deriveEnvelopeKey(ikm []byte, keyID, sequence, eventID uint32, version uint8) ([]byte, error) {
 	salt := make([]byte, 12)
 	binary.LittleEndian.PutUint32(salt[0:4], keyID)
 	binary.LittleEndian.PutUint32(salt[4:8], sequence)
 	binary.LittleEndian.PutUint32(salt[8:12], eventID)
-	return hkdfSHA256(salt, ikm, envelopeHKDFInfo, 32)
+	return hkdfSHA256(salt, ikm, envelopeHKDFInfo(version), 32)
 }
 
 // Seal encrypts and/or authenticates a plain validated envelope (Latch device path).
@@ -197,7 +200,7 @@ func Seal(plain []byte, ring Keyring, encrypt bool) ([]byte, error) {
 		copy(meta[0:24], nonce)
 		binary.LittleEndian.PutUint32(meta[24:28], key.NumericID)
 
-		derived, err := deriveEnvelopeKey(key.Key, key.NumericID, envelope.Sequence, envelope.EventID)
+		derived, err := deriveEnvelopeKey(key.Key, key.NumericID, envelope.Sequence, envelope.EventID, envelope.Version)
 		if err != nil {
 			return nil, err
 		}
@@ -274,7 +277,7 @@ func openAEAD(raw []byte, envelope Envelope, ring Keyring) ([]byte, error) {
 	ciphertext := raw[ctStart:ctEnd]
 	tag := raw[len(raw)-AEADTagSize:]
 
-	derived, err := deriveEnvelopeKey(key.Key, keyID, envelope.Sequence, envelope.EventID)
+	derived, err := deriveEnvelopeKey(key.Key, keyID, envelope.Sequence, envelope.EventID, envelope.Version)
 	if err != nil {
 		return nil, err
 	}
@@ -345,16 +348,4 @@ func allKeys(ring Keyring) []Key {
 		return []Key{key}
 	}
 	return nil
-}
-
-// MetadataKeyID extracts the AEAD numeric key id when present.
-func MetadataKeyID(raw []byte) (uint32, bool) {
-	envelope, err := Validate(raw)
-	if err != nil || envelope.Flags&FlagAEAD == 0 {
-		return 0, false
-	}
-	if len(raw) < HeaderSize+AEADMetadataSize {
-		return 0, false
-	}
-	return binary.LittleEndian.Uint32(raw[HeaderSize+24 : HeaderSize+28]), true
 }

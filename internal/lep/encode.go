@@ -9,13 +9,13 @@ import (
 	"hash/crc32"
 )
 
-// Encode builds a plain (unauthenticated, unencrypted, uncompressed) LEP v1
-// envelope from header fields and TLV payload bytes.
+// Encode builds a plain (unauthenticated, unencrypted, uncompressed) LEP v1/v2
+// envelope from header fields and TLV payload bytes. version 0 defaults to 2.
 func Encode(version, eventType, architecture uint8, sequence, eventID uint32, payload []byte) ([]byte, error) {
 	if version == 0 {
-		version = Version1
+		version = Version2
 	}
-	if version != Version1 {
+	if version != Version1 && version != Version2 {
 		return nil, fmt.Errorf("unsupported LEP version %d", version)
 	}
 	if len(payload) > MaxEnvelopeSize-HeaderSize-4 {

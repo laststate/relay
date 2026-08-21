@@ -96,15 +96,16 @@ func (decoder *Decoder) Buffered() int { return len(decoder.buffer) }
 // reserved uint16, event ID.
 type AckStatus uint8
 
+// AckStatus values match spec/framing.md in the protocol repo (1..8).
 const (
-	AckStored AckStatus = iota + 1
-	AckDuplicate
-	NackCorrupt
-	NackUnsupported
-	NackBusy
-	NackTooLarge
-	NackUnauthorized
-	NackInternal
+	AckStored        AckStatus = 1
+	AckDuplicate     AckStatus = 2
+	NackCorrupt      AckStatus = 3
+	NackUnsupported  AckStatus = 4
+	NackBusy         AckStatus = 5
+	NackTooLarge     AckStatus = 6
+	NackUnauthorized AckStatus = 7
+	NackInternal     AckStatus = 8
 )
 
 func Ack(eventID uint32, status AckStatus) []byte {

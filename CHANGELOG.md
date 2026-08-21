@@ -2,6 +2,20 @@
 
 All notable changes to the LastState Relay gateway.
 
+## [0.5.0] - 2026-08-20
+
+### Added
+- **LEP v2 codec support** — decoders now accept both LEP v1 and v2 envelopes; the
+  relay emits LEP v2 on the wire (v2 is the current wire version). LEP v1 remains
+  accepted for backward compatibility.
+- **Re-vendored protocol golden vectors** — `internal/lep/testdata/protocol-vectors`
+  refreshed from the protocol repo. The manifest (`manifest.json`) now classifies
+  each vector by `kind`: `valid`, `invalid`, `crypto-aead`, `crypto-hmac`,
+  `stream`, and `lsak`.
+
+### Changed
+- Lint and dead-code cleanup across the codebase (golangci-lint and manual review).
+
 ## [0.4.0] — 2026-08-15
 
 ### Added

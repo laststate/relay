@@ -258,7 +258,7 @@ func (server *Server) capabilities(writer http.ResponseWriter, request *http.Req
 		maxBatch = 64 << 20
 	}
 	writeJSON(writer, http.StatusOK, Capabilities{
-		APIVersion: "1", LEPVersions: []int{1}, MaxEventSize: max,
+		APIVersion: "1", LEPVersions: []int{1, 2}, MaxEventSize: max,
 		MaxBatchEvents: 100, MaxBatchBytes: maxBatch, Compression: []string{"identity", "zstd"},
 		ArtifactUpload: false, BatchIngest: true, BinaryBatch: true, Authentication: []string{"none", "bearer"},
 	})

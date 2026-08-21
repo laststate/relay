@@ -72,7 +72,7 @@ docs before changing state machines, persistence, or auth.
 | `internal/delivery/` | Idempotency tests, retry logic, circuit breaker behavior. |
 | `internal/spool/` or SQLite | Migration scripts, crash-recovery tests, durability guarantees. |
 | `internal/admin/` or auth | Token comparison, loopback binding, redirect rejection. |
-| `internal/crypto/` | Key derivation, nonce rules, replay window, constant-time comparisons. |
+| `internal/lep/` crypto | Key derivation, nonce rules, replay window, constant-time comparisons. |
 | Docs or packaging | Deployment checklist, operator security notes. |
 | CI or release automation | The relevant workflow file; do not relax gates to obtain green CI. |
 
