@@ -611,6 +611,12 @@ func Validate(cfg Config) error {
 		if destination.TLS.InsecureSkipVerify && parsed.Scheme != "https" {
 			return fmt.Errorf("%s.tls.insecure_skip_verify: only valid for https", prefix)
 		}
+		if destination.TLS.InsecureSkipVerify && !isLoopbackHost(parsed.Hostname()) {
+			// Guard: insecure_skip_verify is lab-only; require explicit opt-in for non-loopback
+			if env := strings.TrimSpace(strings.ToLower(os.Getenv("RELAY_ALLOW_INSECURE"))); env != "1" && env != "true" {
+				return fmt.Errorf("%s.tls.insecure_skip_verify: refusing non-loopback insecure TLS without RELAY_ALLOW_INSECURE=1 (lab-only)", prefix)
+			}
+		}
 		if destination.Batch.MaxEvents < 1 || destination.Batch.MaxEvents > 1000 {
 			return fmt.Errorf("%s.batch.max_events: must be between 1 and 1000", prefix)
 		}
