@@ -122,15 +122,20 @@ backup · restore · config · version
 | [docs/architecture.md](docs/architecture.md) | How the pieces fit |
 | [docs/durability.md](docs/durability.md) | ACK / write path |
 | [docs/production.md](docs/production.md) | Deploy checklist |
+| [docs/v1-release-gate.md](docs/v1-release-gate.md) | v1.0.0 tagging gate |
+| [docs/hil-matrix.md](docs/hil-matrix.md) | CAN/BLE/LoRa/Probe HIL evidence |
 | [docs/compatibility-matrix.md](docs/compatibility-matrix.md) | What is ready vs draft |
 | [spec/](spec/) | Wire drafts (crypto, batch, TLVs, …) |
 | [ROADMAP.md](ROADMAP.md) | What is left |
 
 ## Status
 
-Solid for lab and pilot gateways. Not tagged `v1.0.0` yet — that waits on
-Latch/Trace E2E, HIL, protocol freeze, and a security review. CAN/BLE/LoRa and
-Probe HIL are still roadmap items (adapter SDK covers custom transports).
+Native CAN (SocketCAN/CAN FD/USB-CAN/TCP), BLE GATT, and LoRa/LoRaWAN sources
+are implemented (`internal/source/can.go`, `ble.go`, `lorawan.go`) with unit
+coverage (`go test ./internal/source/`). Not tagged `v1.0.0` yet — that waits
+on the executable gate in [docs/v1-release-gate.md](docs/v1-release-gate.md):
+protocol freeze, durability soak, Latch+Trace E2E, the
+[HIL matrix](docs/hil-matrix.md), and an external security review.
 
 ## Community and security
 

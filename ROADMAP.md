@@ -27,10 +27,12 @@ Specs under `spec/` are drafts Relay uses today:
 
 ## Still open — transports
 
-- SocketCAN, CAN FD, USB-CAN (wrap via adapter SDK for now)
-- Addressed RS-485
-- BLE GATT
-- LoRa / LoRaWAN
+- [x] SocketCAN, CAN FD, USB-CAN (`internal/source/can*.go` + HIL rows C1–C3
+  in `docs/hil-matrix.md`)
+- [x] BLE GATT via JSON-over-TCP gateway (`internal/source/ble*.go` + rows B1–B3)
+- [x] LoRa / LoRaWAN via MQTT (TTN v3 / ChirpStack) + HTTP poll
+  (`internal/source/lorawan*.go` + rows L1–L3)
+- Addressed RS-485 (wrap via adapter SDK for now)
 - USB HID
 - Full gRPC adapter service (subprocess path exists)
 

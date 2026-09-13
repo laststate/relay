@@ -30,8 +30,10 @@ backward compatibility). Device path = Latch.
 | http / tls | ready |
 | directory | ready |
 | mqtt | ready |
-| adapter (subprocess) | ready |
-| native CAN / BLE / LoRa | not yet (adapter) |
+| adapter (subprocess) | ready (`internal/adapter`) |
+| native CAN (SocketCAN + CAN FD + USB-CAN + CAN-over-TCP) | ready (`internal/source/can.go`, `can_linux.go`, `can_test.go`) |
+| native BLE GATT (gateway link) | ready (`internal/source/ble.go`, `ble_test.go`) |
+| native LoRa/LoRaWAN (MQTT TTN/ChirpStack + HTTP poll) | ready (`internal/source/lorawan.go`, `lorawan_test.go`) |
 
 ## Analysis
 
@@ -44,7 +46,7 @@ backward compatibility). Device path = Latch.
 
 ## Product v1.0.0 still needs
 
-- Latch + Trace end-to-end CI on real MCU  
-- Hardware-in-the-loop matrix  
-- External security review  
-- Power-loss soak on production filesystems  
+- Latch + Trace end-to-end CI on real MCU (see `docs/v1-release-gate.md`)
+- Hardware-in-the-loop matrix (see `docs/hil-matrix.md`)
+- External security review
+- Power-loss soak on production filesystems
