@@ -3,6 +3,11 @@
 Supports **LEP v1 and v2** (v2 is the current wire version; v1 accepted for
 backward compatibility). Device path = Latch.
 
+> LEP v2.0.0 is frozen upstream (protocol `FREEZE.md`, decision 2026-08-26;
+> freeze note `9606571`). No breaking wire changes without ADR + major bump.
+> Relay vendors the golden vectors (`internal/lep/testdata/`) and the
+> protocol conformance suite runs them on every CI.
+
 ## Protocol
 
 | Component | Version | Where |
