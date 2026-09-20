@@ -2,6 +2,14 @@
 
 All notable changes to the LastState Relay gateway.
 
+## [Unreleased]
+
+### Security
+- **Bumped `google.golang.org/grpc` to v1.83.2** - fixes GO-2026-6443
+  (server panic via missing authority/Host headers) and GO-2026-6348
+  (heap exhaustion via HTTP/2 DATA fragmentation) that were failing the
+  `security` CI job.
+
 ## [0.5.0] - 2026-08-20
 
 ### Added
