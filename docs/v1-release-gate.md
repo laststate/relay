@@ -8,6 +8,9 @@ This is the executable version of the "Product v1.0.0 still needs" list in
 
 - [ ] `spec/` drafts used by Relay are frozen (binary batch, LEP crypto wire,
       attachment TLVs, identity TLVs) — linker notes the frozen commit.
+      Reference: protocol `FREEZE.md` (LEP v2.0.0, decision 2026-08-26;
+      freeze note `9606571`); Relay's vendored vectors live in
+      `internal/lep/testdata/` and CI runs them on every push.
 - [ ] `go test ./... -count=1` green on the tag commit.
 - [ ] `go vet ./... && golangci-lint run --timeout=5m` clean.
 
