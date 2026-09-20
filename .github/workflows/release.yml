@@ -117,6 +117,26 @@ jobs:
           path: dist/laststate-relay-${{ matrix.target.suffix }}
           if-no-files-found: error
 
+  deb:
+    needs: check-tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build .deb (amd64)
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}" ARCH=amd64 bash packaging/deb/build.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: relay-deb
+          path: dist/*.deb
+          if-no-files-found: error
+
   docker:
     needs: [build-linux]
     runs-on: ubuntu-latest
@@ -161,7 +181,7 @@ jobs:
             BUILD_DATE=${{ steps.date.outputs.build_date }}
 
   publish:
-    needs: [build-linux, build-windows, build-darwin, docker]
+    needs: [build-linux, build-windows, build-darwin, deb, docker]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -195,6 +215,7 @@ jobs:
             dist/laststate-relay-windows-amd64.exe
             dist/laststate-relay-darwin-amd64
             dist/laststate-relay-darwin-arm64
+            dist/*.deb
             dist/checksums.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
