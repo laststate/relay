@@ -1,6 +1,6 @@
-# Last State Relay
+# LastState Relay
 
-Offline-first gateway between devices running **Latch** and one or more **Trace**
+Offline-first gateway between devices running Latch and one or more Trace
 backends. Relay accepts LEP envelopes (serial, TCP, HTTP, MQTT, adapters, or
 files), validates them, stores them on disk, ACKs the device only after the
 write, optionally analyzes crashes locally, and forwards events with retries
@@ -18,6 +18,10 @@ and idempotency.
 - **Works offline** — outages do not block collection
 - **Raw kept locally** — original LEP bytes stay exportable and checksummed
 - **No cloud lock-in** — talks only to the Trace HTTP contract
+
+> [!NOTE]
+> At-least-once means downstream systems must tolerate duplicates. They can:
+> every envelope carries a stable event id, and Trace dedupes on it.
 
 ## Features
 
@@ -45,6 +49,17 @@ Needs Go 1.26.1+.
 
 ## Quick start
 
+The fastest path is the full stack:
+
+```bash
+git clone --recurse-submodules https://github.com/laststate/laststate.git
+cd laststate
+docker compose up -d
+# admin → http://localhost:8383
+```
+
+Standalone, from this repo:
+
 ```bash
 cp relay.yaml.example relay.yaml
 laststate-relay config validate relay.yaml
@@ -69,10 +84,18 @@ laststate-relay analyze crash.lep --elf build/firmware.elf
 laststate-relay analyze crash.lep --data-dir ./data
 ```
 
+> [!TIP]
+> `laststate-relay doctor --config relay.yaml` checks tokens, spool health and
+> destination reachability before you start. Run it after every config change.
+
 ## APIs
 
-Admin and ingest are separate. Do not expose admin publicly without TLS and a
-strong token.
+Admin and ingest are separate listeners with separate tokens.
+
+> [!WARNING]
+> Never expose the admin listener publicly without TLS and a strong token.
+> Admin can replay, prune and reconcile the spool. Bind it to loopback (or a
+> private interface) unless a reverse proxy with TLS terminates in front.
 
 **Admin**
 
@@ -132,10 +155,13 @@ backup · restore · config · version
 
 Native CAN (SocketCAN/CAN FD/USB-CAN/TCP), BLE GATT, and LoRa/LoRaWAN sources
 are implemented (`internal/source/can.go`, `ble.go`, `lorawan.go`) with unit
-coverage (`go test ./internal/source/`). Not tagged `v1.0.0` yet — that waits
-on the executable gate in [docs/v1-release-gate.md](docs/v1-release-gate.md):
-protocol freeze, durability soak, Latch+Trace E2E, the
-[HIL matrix](docs/hil-matrix.md), and an external security review.
+coverage (`go test ./internal/source/`).
+
+> [!CAUTION]
+> CAN/BLE/LoRa sources are not tagged `v1.0.0`. That waits on the executable
+> gate in [docs/v1-release-gate.md](docs/v1-release-gate.md): protocol freeze,
+> durability soak, Latch+Trace E2E, the [HIL matrix](docs/hil-matrix.md), and
+> an external security review. Do not plan production around them yet.
 
 ## Community and security
 
