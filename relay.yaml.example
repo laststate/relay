@@ -271,3 +271,9 @@ privacy:
       drop_tlv_types: []
       max_payload_bytes: 0
       block_encrypted: false
+
+# ─── Billing realtime (env, not YAML — see docs/BILLING_REALTIME.md) ───
+# BILLING_URL=http://billing:8080
+# BILLING_API_KEY=...
+# BILLING_ORG_ID=<org-uuid>
+
