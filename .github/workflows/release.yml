@@ -54,7 +54,7 @@ jobs:
               -X main.gitCommit=$(git rev-parse --short HEAD) \
               -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
               -o dist/laststate-relay-${{ matrix.target.suffix }} ./cmd/laststate-relay
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: relay-${{ matrix.target.suffix }}
           path: dist/laststate-relay-${{ matrix.target.suffix }}
@@ -80,7 +80,7 @@ jobs:
               -X main.gitCommit=$(git rev-parse --short HEAD) \
               -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
               -o dist/laststate-relay-windows-amd64.exe ./cmd/laststate-relay
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: relay-windows-amd64
           path: dist/laststate-relay-windows-amd64.exe
@@ -112,7 +112,7 @@ jobs:
               -X main.gitCommit=$(git rev-parse --short HEAD) \
               -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
               -o dist/laststate-relay-${{ matrix.target.suffix }} ./cmd/laststate-relay
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: relay-${{ matrix.target.suffix }}
           path: dist/laststate-relay-${{ matrix.target.suffix }}
@@ -132,7 +132,7 @@ jobs:
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}" ARCH=amd64 bash packaging/deb/build.sh
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: relay-deb
           path: dist/*.deb
